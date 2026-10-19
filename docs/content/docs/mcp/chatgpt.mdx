@@ -1,0 +1,79 @@
+---
+title: ChatGPT
+description: Connect your server to ChatGPT as a custom MCP app
+icon: chatgpt
+---
+
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+ChatGPT connects to your server as a *custom MCP app*, added from the
+**Plugins** page. Because ChatGPT runs in OpenAI's cloud (not locally), you point it at your public **streamable-HTTP** endpoint at `/mcp`,
+never `localhost`.
+
+<Callout type="info" title="Account requirements">
+Custom MCP apps need ChatGPT **Plus, Pro, Business, Enterprise, or Edu** on the
+web. On Business/Enterprise/Edu a workspace admin must allow them first (see
+below). ChatGPT **Free** cannot add custom MCP servers.
+</Callout>
+
+<Steps>
+
+<Step>
+
+### Get your connection URL
+
+The connection URL is just the streamable-HTTP endpoint:
+
+```
+https://YOUR-DEPLOYMENT/mcp
+```
+
+Configure [OAuth 2.1](/docs/mcp/oauth) on your deployment so ChatGPT can
+authenticate on connect - you'll pick **OAuth** as the app's auth method
+in Step 2. ChatGPT can't send a custom `X-API-KEY` header, so the
+header-based API-key path that [local clients](/docs/mcp/setup) use doesn't
+apply here.
+
+</Step>
+
+<Step>
+
+### Create the custom MCP server
+
+1. Open [chatgpt.com/plugins](https://chatgpt.com/plugins).
+2. Click **Add**, then **Create custom MCP server**.
+3. Enter a **Name** (e.g. `mymcp`). Under **Connection**, keep **Server URL**
+   selected and paste your connection URL from Step 1.
+4. Set **Authentication** to **OAuth** - ChatGPT discovers your server's
+   authorization server and walks you through consent. (Use **No Auth** only if
+   your deployment runs with no auth configured, e.g. a private internal
+   deployment.)
+5. Tick the risk acknowledgement (**I understand and want to continue**).
+6. Click **Create as a plugin**.
+
+ChatGPT connects and lists your available tools. Start a new chat so the tools
+menu refreshes, then enable the app from the composer's **+** menu if it isn't
+on already.
+
+OpenAI warns that a custom MCP app gets read/write access to the tools you
+expose. Your server still enforces its own auth and policy on every call as an
+additional layer.
+
+<Callout type="warn" title="Teams: each member connects with their own account">
+With OAuth, every member signs in individually on connect, so tool calls are
+attributed to the right user. For a team rollout, have the workspace admin
+turn on **Create custom MCP connectors** under **Workspace Settings >
+Permissions & roles > Connected data**, then let each member add their own app.
+</Callout>
+
+</Step>
+
+</Steps>
+
+## Related
+
+- [Claude Web & Cowork](/docs/mcp/claude-web-cowork) - the equivalent flow for Anthropic's cloud clients
+- [OAuth 2.1](/docs/mcp/oauth) - zero-provisioning auth for cloud clients
+- [Tools](/docs/mcp/tools) - what your server exposes
+- [OpenAI: Developer mode and MCP apps in ChatGPT](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt) - OpenAI's reference for this flow

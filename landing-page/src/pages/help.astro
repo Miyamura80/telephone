@@ -1,0 +1,19 @@
+---
+/**
+ * /help - alias of /support. Serves the support content at a 200, canonicalises
+ * to /support, and carries noindex so only the canonical URL is indexed.
+ */
+import Base from "../layouts/Base.astro";
+import SupportBody from "../components/SupportBody.astro";
+import { site, support } from "../config/landing";
+---
+
+<Base
+  title={`${support.title} - ${site.name}`}
+  description={`Get help with ${site.name}: fix connection and authentication issues, or reach the team by GitHub or email.`}
+  canonicalPath="/support/"
+  noindex={true}
+  markdownPath="/support.md"
+>
+  <SupportBody />
+</Base>

@@ -1,0 +1,258 @@
+---
+title: Examples
+description: End-to-end REST recipes - call a tool, script a batch, retry safely, and read the same registry from all three transports
+---
+
+[Tools](/docs/api/tools) documents each endpoint on its own. This page strings
+them together into the shapes you actually write: a first authenticated call, a
+batch script, retries that do not double-execute, and the check that the CLI,
+MCP, and REST transports really are serving the same function.
+
+Every example assumes these two variables:
+
+```bash
+export MYMCP_API="http://localhost:8000"
+export MYMCP_API_KEY="sk_live_..."
+```
+
+Point `MYMCP_API` at your deployment's base URL to run the same commands against
+production.
+
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+## Your first call
+
+<Steps>
+<Step>
+
+### Confirm the server is up
+
+No authentication needed - this is the endpoint to point a load balancer at.
+
+```bash
+curl -sS "$MYMCP_API/health"
+```
+
+```json
+{
+  "status": "ok",
+  "version": "0.1.1",
+  "commit": "a1b2c3d",
+  "timestamp": "2025-01-15T10:30:00+00:00",
+  "components": {
+    "api": { "status": "ok" },
+    "database": { "status": "ok" },
+    "redis": { "status": "not_configured" },
+    "stripe": { "status": "ok" }
+  }
+}
+```
+
+`"degraded"` means the process is answering but at least one component is not.
+
+</Step>
+<Step>
+
+### Confirm your key works
+
+```bash
+curl -sS "$MYMCP_API/api/v1/auth/me" \
+  -H "Authorization: Bearer $MYMCP_API_KEY"
+```
+
+```json
+{ "user_id": "user_01abc", "email": "user@example.com", "auth_method": "api_key" }
+```
+
+A `401` here means the key is wrong or revoked; a `403` means the key is valid
+but lacks the scope for what you asked. See
+[Authentication](/docs/api/authentication).
+
+</Step>
+<Step>
+
+### Call a tool
+
+Every tool is `POST /api/v1/services/{tool_name}` with the tool's input model as
+the body. Nothing about the route changes from one tool to the next.
+
+```bash
+curl -sS -X POST "$MYMCP_API/api/v1/services/greet" \
+  -H "Authorization: Bearer $MYMCP_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Alice", "shout": true}'
+```
+
+```json
+{ "message": "HELLO, ALICE!", "times": 1 }
+```
+
+</Step>
+</Steps>
+
+## One registry, three transports
+
+The same service answers on all three interfaces, so these three commands
+produce the same result. This is the property worth testing in CI when you add a
+tool - drift between transports means someone bypassed the registry.
+
+<Tabs items={['REST', 'CLI', 'MCP']}>
+<Tab value="REST">
+
+```bash
+curl -sS -X POST "$MYMCP_API/api/v1/services/greet" \
+  -H "Authorization: Bearer $MYMCP_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Alice", "shout": true}'
+```
+
+</Tab>
+<Tab value="CLI">
+
+```bash
+uv run mymcp greet Alice --shout
+```
+
+</Tab>
+<Tab value="MCP">
+
+```text
+Greet Alice, shouting.
+```
+
+Your assistant calls the `greet` tool over the MCP endpoint at `/mcp`. See
+[MCP Setup](/docs/mcp/setup).
+
+</Tab>
+</Tabs>
+
+Adding a tool means writing one `@service` function - the REST route, the CLI
+surface, and the MCP tool all follow from it.
+
+## Scripting a batch
+
+Reads a list of names and greets each one, reusing a single connection.
+
+```python
+import os
+
+import httpx
+
+API = os.environ["MYMCP_API"]
+KEY = os.environ["MYMCP_API_KEY"]
+NAMES = ["Alice", "Bob", "Carol"]
+
+with httpx.Client(base_url=API, headers={"Authorization": f"Bearer {KEY}"}) as client:
+    for name in NAMES:
+        resp = client.post(
+            "/api/v1/services/greet",
+            json={"name": name, "shout": False},
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        print(resp.json()["message"])
+```
+
+Every tool takes the same call shape, so swapping `greet` for another service is
+a change of endpoint name and body - not of structure.
+
+## Reading and writing config
+
+```bash
+curl -sS -X POST "$MYMCP_API/api/v1/services/config_get" \
+  -H "Authorization: Bearer $MYMCP_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"key": "llm_config.cache_enabled"}'
+```
+
+```json
+{ "key": "llm_config.cache_enabled", "value": true }
+```
+
+`config_set` writes an override. It is a mutating service, so its REST route
+requires an `Idempotency-Key`:
+
+```bash
+curl -sS -X POST "$MYMCP_API/api/v1/services/config_set" \
+  -H "Authorization: Bearer $MYMCP_API_KEY" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -H "Content-Type: application/json" \
+  -d '{"key": "logging.verbose", "value": "true"}'
+```
+
+```json
+{ "key": "logging.verbose", "coerced_value": true }
+```
+
+The value arrives as a string and is coerced to the type the config declares -
+`"true"` becomes a boolean, not the four characters.
+
+## Retrying without double-executing
+
+Three failure modes to separate. A `429` or `5xx` means the request may not have
+run - retry it. A `4xx` other than `429` means it ran and was rejected -
+retrying unchanged will fail identically. A `402` is the one that looks
+retryable and is not: it carries a `Retry-After`, but that value points at the
+next daily quota reset, which can be hours out.
+
+```python
+import time
+
+import httpx
+
+
+def call(client: httpx.Client, tool: str, payload: dict, key: str | None = None) -> dict:
+    headers = {"Idempotency-Key": key} if key else {}
+    for attempt in range(5):
+        resp = client.post(f"/api/v1/services/{tool}", json=payload, headers=headers)
+        # Daily quota. Sleeping on this Retry-After parks the loop until the
+        # next reset, so treat it as a stop condition rather than a retry.
+        if resp.status_code == 402:
+            reset = resp.json()["error"]["details"].get("quota_reset_at")
+            raise RuntimeError(f"{tool}: daily quota exhausted, resets at {reset}")
+        if resp.status_code == 429:
+            time.sleep(float(resp.headers.get("Retry-After", "1")))
+            continue
+        if resp.status_code >= 500:
+            time.sleep(2**attempt)
+            continue
+        resp.raise_for_status()
+        return resp.json()
+    raise RuntimeError(f"{tool} did not succeed after 5 attempts")
+```
+
+Hold the `Idempotency-Key` constant across the retries of one operation. The
+first attempt that reaches the server executes; every later attempt with that
+key replays the stored response instead of performing the side effect twice.
+Reusing the key with a *different* payload is a `422` - that is the guard
+working, not a bug. See [Idempotency](/docs/api/idempotency),
+[Rate Limits](/docs/api/rate-limits), and the
+[reference retry loop](/docs/api/errors#reference-retry-loop-python), which adds
+jitter and covers every retryable code.
+
+Errors all share one envelope with a stable `error.code` and a `request_id`;
+branch on the code, quote the request ID in support threads, and never match on
+the message text. Full table in [Errors](/docs/api/errors).
+
+## Discovering what a deployment offers
+
+The generated OpenAPI document at `/openapi.json` lists every route with its
+full request and response schema - point a client generator at it rather than
+hand-writing models.
+
+```bash
+curl -sS "$MYMCP_API/openapi.json" | jq -r '.paths | keys[]' | grep services
+```
+
+The unauthenticated root path describes the deployment to whoever - or whatever
+- lands on it, including the MCP endpoint and the tool list. See
+[Overview](/docs/api#discovery).
+
+## Related
+
+<Cards>
+  <Card title="Tools" href="/docs/api/tools" description="Per-endpoint request and response reference." />
+  <Card title="Authentication" href="/docs/api/authentication" description="API keys, scopes, and rotation." />
+  <Card title="Idempotency" href="/docs/api/idempotency" description="Retry semantics for mutating calls." />
+  <Card title="CLI" href="/docs/cli" description="The same tools from a terminal." />
+</Cards>

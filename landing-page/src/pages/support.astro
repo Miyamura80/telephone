@@ -1,0 +1,18 @@
+---
+/**
+ * /support - the canonical support & contact page (indexed, in the sitemap).
+ * /help and /contact render this same body, canonicalise here, and carry
+ * noindex, so the three URLs a user guesses all land on one answer.
+ */
+import Base from "../layouts/Base.astro";
+import SupportBody from "../components/SupportBody.astro";
+import { site, support } from "../config/landing";
+---
+
+<Base
+  title={`${support.title} - ${site.name}`}
+  description={`Get help with ${site.name}: fix connection and authentication issues, or reach the team by GitHub or email.`}
+  markdownPath="/support.md"
+>
+  <SupportBody />
+</Base>

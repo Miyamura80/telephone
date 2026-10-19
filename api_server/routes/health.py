@@ -1,0 +1,275 @@
+"""Health-check endpoints.
+
+``GET /health`` is public and deliberately minimal: a liveness signal only
+(``{"status": "ok"}``), with no dependency probes at all.  Build identity
+(version, git commit) and the per-component breakdown are information
+disclosure to an anonymous caller (ASVS V14.3.3) - this codebase is open
+source, so a commit SHA tells an attacker exactly which code is deployed.
+Those details, and the readiness rollup, live on ``GET /health/detail``, which
+requires authentication.  See ``health_check`` for why probing on the public
+path is an availability hazard rather than a nicety.
+"""
+
+import os
+import subprocess
+import threading
+from datetime import UTC, datetime
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
+
+from fastapi import APIRouter, Depends
+from loguru import logger as log
+
+from api_server.auth import AuthenticatedUser, get_authenticated_user
+
+try:
+    _APP_VERSION = _pkg_version("mcp-template")
+except PackageNotFoundError:
+    _APP_VERSION = "0.1.0"
+
+router = APIRouter(tags=["health"])
+
+
+def _check_database() -> dict:
+    """Check database connectivity using the app's singleton engine."""
+    try:
+        # Deliberately lazy: probe imports live inside the try so a pruned
+        # or broken config/DB stack reports a status instead of breaking
+        # the /health route at import time.
+        from common import global_config  # noqa: PLC0415
+
+        if not global_config.BACKEND_DB_URI:
+            return {"status": "not_configured"}
+        # (same probe rationale as above)
+        from sqlalchemy import text  # noqa: PLC0415
+
+        from db.engine import use_db_session  # noqa: PLC0415
+
+        with use_db_session() as session:
+            session.execute(text("SELECT 1"))
+        return {"status": "ok"}
+    except Exception as exc:  # noqa: BLE001
+        # Health probe: must report any DB/connection/config failure mode as a
+        # structured status, never propagate.
+        return {"status": "error", "message": type(exc).__name__}
+
+
+_redis_health_client: object | None = None
+_redis_health_client_lock = threading.Lock()
+_REDIS_NOT_CONFIGURED = object()  # sentinel: REDIS_URL was absent
+
+
+def _get_redis_health_client():
+    """Return a reusable Redis client for health checks.
+
+    Returns ``None`` when no ``REDIS_URL`` is configured (the
+    ``_REDIS_NOT_CONFIGURED`` sentinel is used internally to
+    distinguish "not configured" from "not yet created").
+    Creates and caches a new client on first call, then returns
+    the cached instance on subsequent calls.
+    """
+    global _redis_health_client  # noqa: PLW0603
+    val = _redis_health_client
+    if val is _REDIS_NOT_CONFIGURED:
+        return None
+    if val is not None:
+        return val
+    with _redis_health_client_lock:
+        val = _redis_health_client
+        if val is _REDIS_NOT_CONFIGURED:
+            return None
+        if val is not None:
+            return val
+        # Deliberately lazy: callers (_check_redis) treat ImportError like
+        # any other probe failure, so a pruned config or redis package
+        # degrades to an error status instead of breaking module import.
+        from common import global_config  # noqa: PLC0415
+
+        redis_url = getattr(global_config, "REDIS_URL", None)
+        if not redis_url:
+            _redis_health_client = _REDIS_NOT_CONFIGURED
+            return None
+        # (same probe rationale as above)
+        import redis  # noqa: PLC0415
+
+        _redis_health_client = redis.from_url(
+            redis_url, socket_connect_timeout=2, socket_timeout=2
+        )
+        return _redis_health_client
+
+
+def _check_redis() -> dict:
+    """Check Redis connectivity."""
+    global _redis_health_client  # noqa: PLW0603
+    try:
+        client = _get_redis_health_client()
+        if client is None:
+            return {"status": "not_configured"}
+        client.ping()
+        return {"status": "ok"}
+    except Exception as exc:  # noqa: BLE001
+        # Health probe: any Redis client error (connection, auth, timeout) maps
+        # to a status string; reset the cached client so the next probe retries.
+        with _redis_health_client_lock:
+            _redis_health_client = None
+        return {"status": "error", "message": type(exc).__name__}
+
+
+def _check_stripe() -> dict:
+    """Check Stripe SDK initialization (config + key presence).
+
+    Does not make a live API call to avoid hitting Stripe rate limits
+    from frequent health probes.
+    """
+    try:
+        # Deliberately lazy: the except below explicitly maps "Stripe SDK /
+        # config / import failure" to a status string; imports must stay
+        # inside the try for that to hold when billing is pruned.
+        from common import global_config  # noqa: PLC0415
+
+        has_key = bool(
+            getattr(global_config, "STRIPE_SECRET_KEY", None)
+            or getattr(global_config, "STRIPE_TEST_SECRET_KEY", None)
+        )
+        if not has_key:
+            return {"status": "not_configured"}
+
+        # (same probe rationale as above)
+        from api_server.billing.stripe_config import ensure_stripe  # noqa: PLC0415
+
+        if not ensure_stripe():
+            return {"status": "error", "message": "initialization_failed"}
+
+        return {"status": "ok"}
+    except Exception as exc:  # noqa: BLE001
+        # Health probe: report any Stripe SDK / config / import failure as a
+        # structured status rather than crashing the /health endpoint.
+        return {"status": "error", "message": type(exc).__name__}
+
+
+_git_commit_lock = threading.Lock()
+_git_commit_value: str | None = None
+_git_commit_resolved = False
+
+
+def _get_git_commit() -> str | None:
+    """Get current git commit hash (cached after first call).
+
+    Prefers build-time env vars (GIT_SHA, RENDER_GIT_COMMIT) for
+    containerized deployments where git may not be available.
+    Production deployments should always set GIT_SHA so the subprocess
+    fallback is never invoked (it adds latency on cold start and requires
+    git to be installed in the container image).
+    Uses double-checked locking so the subprocess runs exactly once,
+    even under concurrent cold-start calls.  Executes in FastAPI's
+    sync-endpoint threadpool, so it does not block the async event loop.
+    """
+    global _git_commit_value, _git_commit_resolved
+    if _git_commit_resolved:
+        return _git_commit_value
+    with _git_commit_lock:
+        if _git_commit_resolved:
+            return _git_commit_value
+        for var in ("GIT_SHA", "RENDER_GIT_COMMIT"):
+            # Prefer build-time env vars; the subprocess fallback below
+            # requires git in the container image and adds cold-start latency.
+            val = os.getenv(var)
+            if val:
+                _git_commit_value = val[:7]
+                _git_commit_resolved = True
+                return _git_commit_value
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            _git_commit_value = (
+                result.stdout.strip() if result.returncode == 0 else None
+            )
+        except (OSError, subprocess.SubprocessError):
+            _git_commit_value = None
+        if _git_commit_value is None:
+            log.warning(
+                "Could not determine git commit (GIT_SHA not set and git unavailable); "
+                "set GIT_SHA at build time for production deployments"
+            )
+        _git_commit_resolved = True
+        return _git_commit_value
+
+
+def _collect_components() -> dict[str, dict]:
+    """Probe every component, uncached.
+
+    Results were cached behind a 15s TTL when the public liveness endpoint
+    polled them; ``/health/detail`` is the only caller now, and an operator
+    checking whether a failover recovered wants the current answer, not one
+    from up to fifteen seconds ago with no way to bust it.
+    """
+    return {
+        "api": {"status": "ok"},
+        "database": _check_database(),
+        "redis": _check_redis(),
+        "stripe": _check_stripe(),
+    }
+
+
+def _overall_status(components: dict[str, dict]) -> str:
+    """Roll components up: "ok" unless any component errored, then "degraded"."""
+    for comp in components.values():
+        if comp["status"] == "error":
+            return "degraded"
+    return "ok"
+
+
+@router.get("/health", summary="Liveness probe (public)")
+def health_check():
+    """Public liveness signal: this process is up and serving.
+
+    Runs **no dependency probes**.  Liveness and readiness are different
+    questions and this endpoint answers only the first, for three reasons:
+
+    - ``db/engine.py`` builds the engine with ``pool_pre_ping=True`` and no
+      connect timeout, so a database host that stops answering SYN blocks the
+      probe on OS TCP retries (~130s on Linux).  The Dockerfile healthcheck is
+      ``--timeout=5s --retries=3``, so probing here would turn a slow
+      dependency into a container restart loop.
+    - This is a sync ``def``, so it runs on the anyio threadpool.  A probe that
+      blocks lets unauthenticated callers park every thread in that pool and
+      stall every other sync route in the app.  ``db/engine.py`` now bounds the
+      connect at ``CONNECT_TIMEOUT_SECONDS``, but a bounded probe on an
+      anonymous endpoint is still a lever an attacker can pull for free.
+    - A per-component rollup readable by anonymous callers is a disclosure
+      oracle in its own right ("one of their backends is erroring right now").
+
+    Nothing consumes the rollup: Railway ``healthcheckPath``, Render
+    ``healthCheckPath`` and the Dockerfile ``HEALTHCHECK`` all assert on the
+    status code alone.  Readiness lives on ``/health/detail``.
+    """
+    return {"status": "ok"}
+
+
+@router.get("/health/detail", summary="Detailed health (authenticated)")
+def health_detail(_user: AuthenticatedUser = Depends(get_authenticated_user)):
+    """Full health payload - build identity plus per-component status.
+
+    Authenticated-only: the git commit identifies the exact deployed revision
+    of an open-source codebase, which is exactly the disclosure ASVS V14.3.3
+    warns about.
+
+    This is a sync ``def`` and it does probe, so the threadpool argument in
+    ``health_check`` applies here too - authentication changes who can pull the
+    lever, not that it exists.  What bounds it is ``db/engine.py``'s
+    ``CONNECT_TIMEOUT_SECONDS``: the Redis client already carries its own
+    socket timeouts and the Stripe probe makes no network call, so with the
+    database connect bounded, no probe here can hold a worker indefinitely.
+    """
+    components = _collect_components()
+    return {
+        "status": _overall_status(components),
+        "version": _APP_VERSION,
+        "commit": _get_git_commit(),
+        "timestamp": datetime.now(UTC).isoformat(),
+        "components": components,
+    }

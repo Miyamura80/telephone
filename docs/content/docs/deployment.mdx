@@ -18,15 +18,18 @@ one-click to Render, from the repo on Railway, or run the container yourself.
   />
 </Cards>
 
-Both targets provision the backend (FastAPI + MCP at `/mcp`) as a Docker service
-plus a managed Postgres database, run Alembic migrations, and prompt for the
-required secrets. The landing page (`landing-page/`) deploys separately and is
+Render provisions the backend (FastAPI + MCP at `/mcp`) as a Docker service plus
+a managed Postgres database, runs Alembic migrations, and prompts for the
+required secrets. A direct Railway deploy from the repo creates only the backend
+service: add a Postgres service yourself and set `BACKEND_DB_URI` (see the
+variable map below). The landing page (`landing-page/`) deploys separately and is
 not included.
 
 <Callout title="Forking this repo?">
 The Render button points at the canonical repo; change its `repo=` URL to your
 fork. Railway has no published Telephone template: deploy from your repo
-directly, or publish your own template from your project (see below).
+directly (adding Postgres yourself), or publish your own template from your
+project (see below).
 </Callout>
 
 ## Railway

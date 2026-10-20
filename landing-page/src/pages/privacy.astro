@@ -84,8 +84,9 @@ const effectiveDate = "October 19, 2026";
     <h2 class="mt-10 text-2xl font-semibold">Storage and retention</h2>
     <p class="mt-3">
       Calls are held in server memory and are lost when the server restarts.
-      Transcripts of each call are written to the server's disk so both parties
-      can read a call back; there is no self-service deletion for them yet.
+      Transcripts of each call are written to the server's disk, but the
+      Service's call-readback tools cannot retrieve them after a restart; there
+      is no self-service deletion for them yet.
       Pending webhook deliveries are retried a few times and then dropped.
     </p>
 

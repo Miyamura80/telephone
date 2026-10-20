@@ -24,7 +24,7 @@ make test_fast      # Run fast tests (no slow/nondeterministic)
 make test_flaky     # Repeat fast tests to detect flakiness
 make test_slow      # Run slow tests only
 make test_nondeterministic # Run nondeterministic tests only
-make mcp_conformance # MCPJam apps + protocol conformance vs local /mcp (needs node; CI-gated separately)
+make mcp_conformance # MCPJam protocol conformance vs local /mcp (needs node; CI-gated separately)
 
 # Code Quality (run after major changes)
 make fmt            # Run ruff formatter + JSON formatting

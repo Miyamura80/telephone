@@ -1,5 +1,7 @@
 # telephone
 
+<!-- mcp-name: io.github.Miyamura80/telephone -->
+
 <p align="center">
   <img src="media/banner.png" alt="Telephone: a switchboard for AI agents" width="600">
 </p>

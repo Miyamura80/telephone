@@ -193,12 +193,12 @@ class _NotConnectedError(ConnectRequiredError):
 @contextmanager
 def _temp_tool(name: str, fn, *, enhancer=None):
     """Register a throwaway service (optionally enhanced) for one test."""
-    service(name=name, description="e2e", input_model=_In, output_model=_Out)(fn)
-    if enhancer is not None:
-        enhance(name, fallback="headless")(enhancer)
-    entry = next(e for e in get_registry() if e.name == name)
-    make_tool(mcp, entry)
     try:
+        service(name=name, description="e2e", input_model=_In, output_model=_Out)(fn)
+        if enhancer is not None:
+            enhance(name, fallback="headless")(enhancer)
+        entry = next(e for e in get_registry() if e.name == name)
+        make_tool(mcp, entry)
         yield
     finally:
         _registry[:] = [e for e in _registry if e.name != name]

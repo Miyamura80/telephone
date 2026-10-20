@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
+from api_server.deprecation import DEPRECATION_POLICY_URL
 from api_server.middleware.error_handler import (
     ErrorHandlerMiddleware,
     RequestIdMiddleware,
@@ -57,7 +58,7 @@ _API_DESCRIPTION = (
     "**Deprecation policy:** a deprecated endpoint returns a `Deprecation` "
     "header (RFC 9745), a `Sunset` header (RFC 8594) once a removal date is "
     'set, and a `Link; rel="deprecation"` header pointing to the policy page. '
-    "See https://github.com/Miyamura80/telephone.\n\n"
+    f"See {DEPRECATION_POLICY_URL}.\n\n"
     "**Pagination:** list endpoints are cursor-based. Follow `next_cursor` "
     "until `has_more` is false."
 )

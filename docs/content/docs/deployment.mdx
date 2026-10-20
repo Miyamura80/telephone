@@ -1,6 +1,6 @@
 ---
 title: Deployment
-description: One-click deploy to Railway or Render, or run the container on any host
+description: One-click deploy to Render, deploy from the repo on Railway, or run the container on any host
 ---
 
 import { Server } from 'lucide-react';
@@ -24,17 +24,17 @@ required secrets. The landing page (`landing-page/`) deploys separately and is
 not included.
 
 <Callout title="Forking this repo?">
-The buttons point at the canonical upstream template. To deploy your own fork,
-change the Render button's `repo=` URL to your fork and re-create the Railway
-template from your project (its deploy link is fixed to a published template).
-Render's button takes an absolute repo URL, so it can't auto-follow a fork.
+The Render button points at the canonical repo; change its `repo=` URL to your
+fork. Railway has no published Telephone template: deploy from your repo
+directly, or publish your own template from your project (see below).
 </Callout>
 
 ## Railway
 
 The committed [`railway.json`](https://github.com/Miyamura80/telephone/blob/main/railway.json)
-pins the Docker build, pre-deploy migrations, and health check, so the template
-inherits them. To re-generate or update the template: **project Settings ->
+pins the Docker build, pre-deploy migrations, and health check, so a deploy from
+the repo (or a template published from it) inherits them. To publish your own
+template: **project Settings ->
 Generate Template from Project -> Publish** (dashboard only; the CLI can't
 publish templates).
 

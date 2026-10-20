@@ -288,7 +288,7 @@ class AskConfig(BaseModel):
 
     enabled: bool = False
     corpus_path: str = "docs/content/docs"
-    docs_base_url: str = "https://github.com/Miyamura80/telephone"
+    docs_base_url: str = "https://docs.telephone.example.com"
     top_k: int = 5
     rate_limit_per_minute: int = 20
 

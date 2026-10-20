@@ -15,8 +15,8 @@ POST /api/v1/services/{tool_name}
 body.
 
 <Callout type="info">
-Services that change state (`dial`, `answer`, `say`, `hang_up`, `config_set`,
-`doctor_fix`) **require an `Idempotency-Key` header**. The response is
+Services that change state (`dial`, `answer`, `say`, `listen`, `hang_up`,
+`config_set`, `doctor_fix`) **require an `Idempotency-Key` header**. The response is
 replayed on retries with the same key, and the same key with a different payload
 is a `422`. See [Idempotency](/docs/api/idempotency).
 </Callout>
@@ -76,7 +76,7 @@ The six call tools are served here at the same route shape as over MCP:
 | `answer` | yes | required |
 | `say` | yes | required |
 | `hang_up` | yes | required |
-| `listen` | no | not needed |
+| `listen` | yes (it consumes the messages it returns) | required |
 | `get_messages` | no | not needed |
 
 `dial` and `answer` return a `seat` token; send it on every later call. Line

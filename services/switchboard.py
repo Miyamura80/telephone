@@ -28,6 +28,7 @@ from loguru import logger as log
 
 from common import global_config
 from models.telephone import CallStatus, Message, Role, Transcript
+from src.utils.cancellation import is_cancelled
 
 # Ended calls older than this are dropped when a new call is dialed.
 _ENDED_RETENTION_S = 3600.0
@@ -72,7 +73,7 @@ class Call:
 
     def role_of(self, seat: str) -> Role:
         for role, held in self.seats.items():
-            if secrets.compare_digest(held, seat):
+            if secrets.compare_digest(held.encode(), seat.encode()):
                 return role
         raise BadSeatError(
             f"That seat does not belong to the call on line {self.line!r}."
@@ -122,6 +123,7 @@ class Switchboard:
         self._listeners: list[Listener] = []
         # Events produced under the lock, emitted by _flush() after release.
         self._pending: list[CallEvent] = []
+        self._reaper: threading.Thread | None = None
 
     # -- listeners ---------------------------------------------------------
 
@@ -148,6 +150,7 @@ class Switchboard:
 
     def dial(self, line: str, opening: str) -> tuple[Call, str]:
         """Start a call on ``line`` and post the caller's opening message."""
+        self._ensure_reaper()
         with self._cond:
             self._prune()
             existing = self._live_call(line)
@@ -222,7 +225,9 @@ class Switchboard:
     ) -> tuple[Call, Role, list[Message]]:
         """Return unseen peer messages, waiting up to ``wait_s`` for at least one.
 
-        Returns early (possibly with no messages) when the call ends.
+        Returns early (possibly with no messages) when the call ends, or when
+        the request this wait serves is abandoned: then nothing is consumed, so
+        the agent's next ``listen`` still sees the message.
         """
         deadline = self._clock() + wait_s
         with self._cond:
@@ -230,6 +235,9 @@ class Switchboard:
             role = call.role_of(seat)
             peer = peer_of(role)
             while True:
+                if is_cancelled():
+                    fresh = []
+                    break
                 fresh = [
                     m
                     for m in call.messages
@@ -299,7 +307,6 @@ class Switchboard:
             seq=len(call.messages) + 1, sender=role, text=text, sent_at=_now_iso()
         )
         call.messages.append(message)
-        call.cursors[role] = message.seq  # never echo your own words back
         call.last_activity = self._clock()
         self._record(call, {"event": "message", **message.model_dump()})
         peer_seat = call.seats.get(peer_of(role))
@@ -339,6 +346,26 @@ class Switchboard:
         idle_for = self._clock() - call.last_activity
         if idle_for >= global_config.telephone.idle_timeout_s:
             self._end_locked(call, f"idle for {int(idle_for)}s")
+
+    def _ensure_reaper(self) -> None:
+        """Start the idle reaper once, so idle calls end (and emit
+        ``line.ended``) even when no request touches them."""
+        with self._cond:
+            if self._reaper is not None:
+                return
+            self._reaper = threading.Thread(
+                target=self._reap_forever, name="switchboard-reaper", daemon=True
+            )
+            self._reaper.start()
+
+    def _reap_forever(self) -> None:
+        while True:
+            interval = min(30.0, global_config.telephone.idle_timeout_s / 4)
+            time.sleep(max(1.0, interval))
+            with self._cond:
+                for call in list(self._calls.values()):
+                    self._expire_if_idle(call)
+            self._flush()
 
     def _prune(self) -> None:
         cutoff = self._clock() - _ENDED_RETENTION_S

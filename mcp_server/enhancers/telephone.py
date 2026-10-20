@@ -3,8 +3,8 @@
 FastMCP calls a headless (sync) tool directly on the event loop, so a
 ``listen`` that waits minutes for the other agent would stall every other
 request. These enhancers move the wait to a worker thread and send progress
-notifications while it lasts. Non-blocking tools (``get_messages``) stay
-headless.
+notifications while it lasts. Non-blocking tools (``get_messages``,
+``hang_up``) stay headless.
 """
 
 from common import global_config
@@ -22,5 +22,7 @@ async def _wait_on_line(tool: EnhancedTool) -> CallView:
 
 
 # "error": these services mutate the call; never silently re-run them.
-for _name in ("dial", "answer", "say", "listen", "hang_up"):
+# `hang_up` and `get_messages` never block, so they stay headless and are never
+# stuck behind long waits in the worker pool.
+for _name in ("dial", "answer", "say", "listen"):
     enhance(_name, fallback="error")(_wait_on_line)

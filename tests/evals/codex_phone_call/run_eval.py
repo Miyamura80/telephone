@@ -5,11 +5,14 @@ Builds a throwaway workspace with two sides:
 - ``impl/``   - a git checkout of the ``acme-cli`` fixture (planted bug). The
   implementer agent runs here with write access.
 - ``caller/`` - an ``acme-cli`` wrapper plus a config that triggers the bug. The
-  caller agent runs here read-only and has no access to the source.
+  caller agent runs here with a read-only sandbox, so it cannot change the
+  code. The source is not in its workspace, but the wrapper runs it from
+  ``impl/``, so a determined agent could read it; the prompt forbids that and
+  the transcript shows whether the fix came from the call.
 
 Starts the telephone server, launches both agents on the same line, waits for
 the call to end, then scores it. Pass means: the caller hung up with
-``resolved=true``, the implementer asked at least one question before fixing,
+``resolved=true``, the implementer's first message was a question,
 ``acme-cli sync`` now succeeds with the caller's config, and the fixture's
 tests pass.
 
@@ -232,6 +235,8 @@ def score(report: Report, impl: Path, caller: Path) -> None:
     messages = [e for e in entries if e["event"] == "message"]
     report.caller_messages = sum(m["sender"] == "caller" for m in messages)
     report.implementer_messages = sum(m["sender"] == "implementer" for m in messages)
+    implementer_texts = [m["text"] for m in messages if m["sender"] == "implementer"]
+    asked_first = bool(implementer_texts) and "?" in implementer_texts[0]
     ended = [e for e in entries if e["event"] == "ended"]
     if ended:
         report.resolved = ended[-1].get("resolved")
@@ -261,7 +266,8 @@ def score(report: Report, impl: Path, caller: Path) -> None:
     checks = {
         "caller never dialed": bool(messages),
         "call not resolved by the caller": report.resolved is True,
-        "implementer asked no question before fixing": report.implementer_messages >= 2,
+        "implementer did not open with a question": asked_first,
+        "implementer never reported a fix": report.implementer_messages >= 2,
         "acme-cli sync still fails": report.cli_ok,
         "fixture tests fail": report.fixture_tests_ok,
         "implementer changed nothing": bool(report.impl_diff.strip()),

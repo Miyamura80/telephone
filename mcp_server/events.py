@@ -18,15 +18,16 @@ from typing import Any
 
 from anyio.to_thread import run_sync
 from mcp.server.fastmcp import FastMCP
-from pydantic import ValidationError
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from models.telephone_events import SubscribeParams, UnsubscribeParams
-from services.line_events import EventsError, line_events
-from services.switchboard import TelephoneError
+from services.line_events import line_events
 from src.utils.current_user import current_user
 
 _METHODS = frozenset({"events/list", "events/subscribe", "events/unsubscribe"})
+# Every /mcp POST is buffered to check its method; cap it so an authenticated
+# client cannot exhaust memory. Far above any real MCP request.
+MAX_BODY_BYTES = 4 * 1024 * 1024
 _INVALID_PARAMS = -32602
 _INVALID_REQUEST = -32600
 
@@ -69,9 +70,9 @@ async def _handle(rpc: dict[str, Any]) -> dict[str, Any]:
     try:
         # subscribe resolves DNS for the SSRF guard; keep it off the loop.
         reply["result"] = await run_sync(_dispatch, rpc["method"], params)
-    except ValidationError as exc:
-        reply["error"] = {"code": _INVALID_PARAMS, "message": str(exc)}
-    except (EventsError, TelephoneError) as exc:
+    except ValueError as exc:
+        # Covers pydantic ValidationError, EventsError and TelephoneError, plus
+        # stray ValueError/UnicodeError from URL parsing: always -32602.
         reply["error"] = {"code": _INVALID_PARAMS, "message": str(exc)}
     return reply
 
@@ -91,31 +92,44 @@ class EventsJsonRpc:
             await self.app(scope, receive, send)
             return
         body = await _read_body(receive)
+        if body is None:
+            await _send_json(send, 413, {"error": "request body too large"})
+            return
         rpc = _parse(body)
         if rpc is None:
             await self.app(scope, _replay(body, receive), send)
             return
-        payload = json.dumps(await _handle(rpc)).encode()
-        await send(
-            {
-                "type": "http.response.start",
-                "status": 200,
-                "headers": [
-                    (b"content-type", b"application/json"),
-                    (b"content-length", str(len(payload)).encode()),
-                ],
-            }
-        )
-        await send({"type": "http.response.body", "body": payload})
+        await _send_json(send, 200, await _handle(rpc))
 
 
-async def _read_body(receive: Receive) -> bytes:
+async def _send_json(send: Send, status: int, body: dict[str, Any]) -> None:
+    payload = json.dumps(body).encode()
+    await send(
+        {
+            "type": "http.response.start",
+            "status": status,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(payload)).encode()),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": payload})
+
+
+async def _read_body(receive: Receive) -> bytes | None:
+    """Read the whole body, or None once it exceeds ``MAX_BODY_BYTES``."""
     chunks: list[bytes] = []
+    size = 0
     while True:
         message = await receive()
         if message["type"] != "http.request":
             break
-        chunks.append(message.get("body", b""))
+        chunk = message.get("body", b"")
+        size += len(chunk)
+        if size > MAX_BODY_BYTES:
+            return None
+        chunks.append(chunk)
         if not message.get("more_body", False):
             break
     return b"".join(chunks)
@@ -127,7 +141,10 @@ def _parse(body: bytes) -> dict[str, Any] | None:
         rpc = json.loads(body)
     except ValueError:
         return None
-    if isinstance(rpc, dict) and rpc.get("method") in _METHODS and "id" in rpc:
+    if not isinstance(rpc, dict) or "id" not in rpc:
+        return None
+    method = rpc.get("method")
+    if isinstance(method, str) and method in _METHODS:
         return rpc
     return None
 

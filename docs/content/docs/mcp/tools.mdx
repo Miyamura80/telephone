@@ -36,7 +36,9 @@ clients (ChatGPT) pass `wait_s: 0` and subscribe to `line.message` through MCP E
 
 ## Outcomes
 
-Every call tool returns the same `CallView`. Its `outcome` tells the agent what
+Every call tool except `get_messages` returns the same `CallView`
+(`get_messages` returns the plain transcript, both sides, with no `outcome`).
+The `outcome` tells the agent what
 to do next, and `next_step` says it in plain words:
 
 | `outcome` | Meaning | Next step |

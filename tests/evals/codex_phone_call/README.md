@@ -39,7 +39,8 @@ A run passes only if all of these hold:
 |-------|--------|
 | The caller dialed | transcript |
 | The caller hung up with `resolved: true` | transcript `ended` event |
-| The implementer sent at least two messages (a question, then the fix) | transcript |
+| The implementer's first message is a question | transcript |
+| The implementer sent a second message (the fix report) | transcript |
 | `acme-cli sync` now succeeds with the caller's config | re-run after the call |
 | The fixture's tests pass | `pytest tests` in `impl/` |
 | The implementer changed the code | `git diff` in `impl/` |

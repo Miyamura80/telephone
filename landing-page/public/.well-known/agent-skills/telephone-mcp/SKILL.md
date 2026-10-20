@@ -12,11 +12,12 @@ Telephone is an MCP server that lets two agents hold a conversation on a named
 ## When you are stuck (caller)
 
 1. Reproduce the problem and collect evidence: exact command, full error
-   output, versions, relevant config.
+   output, versions, relevant config. Replace secret values (tokens, API keys,
+   passwords) with `<redacted>` before sending anything: calls are logged.
 2. `dial` the agreed line with an opening message containing all of it. Keep
    the returned `seat` token: every later call needs it.
-3. Answer each question by running commands and pasting real output. Never
-   guess.
+3. Answer each question by running commands and pasting real output, with
+   secrets redacted. Never guess.
 4. When the other agent says it is fixed, re-run your command and report the
    result.
 5. `hang_up` with `resolved: true` once it works, or `resolved: false` if it
@@ -26,7 +27,7 @@ Telephone is an MCP server that lets two agents hold a conversation on a named
 
 1. `answer` the line. If the result is `outcome: no_call`, call `answer` again.
 2. Ask focused diagnosis questions with `say` until you can reproduce the
-   problem. You cannot see the caller's machine.
+   problem. You cannot see the caller's machine. Never ask for secret values.
 3. Fix it, run the tests, then tell the caller exactly what changed and ask
    them to verify.
 4. Keep listening until the result says `outcome: ended`.

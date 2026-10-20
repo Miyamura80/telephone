@@ -8,7 +8,7 @@ type validation and structure for the configuration data.
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, NonNegativeFloat
 
 
 class ExampleParent(BaseModel):
@@ -306,7 +306,9 @@ class TelephoneEventsConfig(BaseModel):
     default_ttl_s: int = Field(default=3600, ge=60)
     max_ttl_s: int = Field(default=604800, ge=60)
     max_attempts: int = Field(default=4, ge=1)
-    backoff_s: list[float] = Field(default_factory=lambda: [1.0, 5.0, 30.0])
+    backoff_s: list[NonNegativeFloat] = Field(
+        default_factory=lambda: [1.0, 5.0, 30.0], min_length=1
+    )
     request_timeout_s: float = Field(default=10.0, gt=0)
 
 

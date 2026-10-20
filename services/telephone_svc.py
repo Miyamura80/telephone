@@ -62,10 +62,12 @@ def _view(
     seat: str | None,
     messages: list[Message],
 ) -> CallView:
-    if messages:
-        outcome: Outcome = "message"
-    elif call.status == "ended":
-        outcome = "ended"
+    # Ended wins: a final message that ends the call (turn cap, hang-up) is
+    # still returned in `messages`, but replying to it would fail.
+    if call.status == "ended":
+        outcome: Outcome = "ended"
+    elif messages:
+        outcome = "message"
     else:
         outcome = "waiting"
     return CallView(
@@ -150,6 +152,9 @@ def say(input: SayInput) -> CallView:
     ),
     input_model=ListenInput,
     output_model=CallView,
+    # It consumes the messages it returns, so a REST retry must replay the
+    # first response rather than wait again and skip what was handed over.
+    mutating=True,
 )
 def listen(input: ListenInput) -> CallView:
     call, role, fresh = switchboard.wait_for_peer(

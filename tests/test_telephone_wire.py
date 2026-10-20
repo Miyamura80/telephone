@@ -198,10 +198,14 @@ class TestTwoAgentsOnTheWire(TestTemplate):
     def test_a_waiting_listen_does_not_block_other_requests(self, server):
         base, key = server
 
+        dialed: asyncio.Event | None = None
+
         async def waiter(session):
+            assert dialed is not None
             view = await _session_call(
                 session, "dial", {"line": "slow", "message": "hi", "wait_s": 0}
             )
+            dialed.set()
             await _session_call(
                 session,
                 "listen",
@@ -209,13 +213,17 @@ class TestTwoAgentsOnTheWire(TestTemplate):
             )
 
         async def prober(session):
-            await asyncio.sleep(0.5)
+            assert dialed is not None
+            await dialed.wait()  # the line exists; the dial is not raced
+            await asyncio.sleep(0.3)  # let the waiter's listen start blocking
             started = time.monotonic()
             view = await _session_call(session, "answer", {"line": "slow", "wait_s": 0})
             assert view["outcome"] == "message"
             return time.monotonic() - started
 
         async def main():
+            nonlocal dialed
+            dialed = asyncio.Event()
             return await asyncio.gather(
                 _Agent(base, key).run(waiter), _Agent(base, key).run(prober)
             )
@@ -334,8 +342,13 @@ class TestMcpEvents(TestTemplate):
         reply = _rpc(base, key, "events/subscribe", params)
         assert reply["error"]["code"] == -32602
         assert "https" in reply["error"]["message"]
-        params["delivery"] = {"url": "https://example.com/hook", "secret": "nope"}
-        reply = _rpc(base, key, "events/subscribe", params)
+        # Isolate the secret check: allow the callback so only the secret fails.
+        params["delivery"] = {"url": "http://localhost/hook", "secret": "nope"}
+        with patch.object(
+            global_config.telephone.events, "allow_insecure_callbacks", True
+        ):
+            reply = _rpc(base, key, "events/subscribe", params)
+        assert "whsec_" in reply["error"]["message"]
         assert reply["error"]["code"] == -32602
 
     def test_subscribe_rejects_foreign_seat(self, server):

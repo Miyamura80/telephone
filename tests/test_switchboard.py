@@ -25,6 +25,7 @@ from services.switchboard import (
     UnknownCallError,
     switchboard,
 )
+from src.utils.cancellation import bind_cancel_event, unbind_cancel_event
 from tests.test_template import TestTemplate
 
 
@@ -168,6 +169,52 @@ class TestSwitchboard(TestTemplate):
         assert events == ["dialed", "message", "answered", "ended"]
 
 
+class TestSwitchboardRegressions(TestTemplate):
+    def test_speaking_does_not_skip_unread_peer_messages(self):
+        board = Switchboard()
+        _, caller, implementer = _connect(board)
+        board.say("bug-1", implementer, "question one")
+        # The caller speaks before reading; the question must still arrive.
+        board.say("bug-1", caller, "meanwhile, more context")
+        _, _, fresh = board.wait_for_peer("bug-1", caller, 0)
+        assert [m.text for m in fresh] == ["question one"]
+
+    def test_abandoned_wait_consumes_nothing(self):
+        board = Switchboard()
+        _, caller, implementer = _connect(board)
+        board.say("bug-1", implementer, "reply")
+        event = threading.Event()
+        event.set()
+        token = bind_cancel_event(event)
+        try:
+            _, _, fresh = board.wait_for_peer("bug-1", caller, 5)
+        finally:
+            unbind_cancel_event(token)
+        assert fresh == []
+        assert [m.text for m in board.wait_for_peer("bug-1", caller, 0)[2]] == ["reply"]
+
+    def test_non_ascii_seat_is_a_bad_seat(self):
+        board = Switchboard()
+        _connect(board)
+        with pytest.raises(BadSeatError):
+            board.say("bug-1", "seat_\u00e9", "hi")
+
+    def test_reaper_ends_idle_calls_without_requests(self):
+        clock = FakeClock()
+        board = Switchboard(clock=clock)
+        ended = threading.Event()
+
+        def on_event(event):
+            if event.kind == "ended":
+                ended.set()
+
+        board.add_listener(on_event)
+        with patch.object(global_config.telephone, "idle_timeout_s", 4.0):
+            _connect(board)
+            clock.now += 10
+            assert ended.wait(5), "reaper never expired the idle call"
+
+
 class TestTelephoneServices(TestTemplate):
     def test_full_call_through_services(self):
         dialed = telephone_svc.dial(DialInput(line="svc", message="help", wait_s=0))
@@ -195,6 +242,21 @@ class TestTelephoneServices(TestTemplate):
         assert ended.outcome == "ended" and ended.resolved is True
         after = telephone_svc.listen(ListenInput(line="svc", seat=seat_i, wait_s=0))
         assert after.outcome == "ended"
+
+    def test_final_message_that_ends_the_call_reports_ended(self):
+        with patch.object(global_config.telephone, "max_turns", 2):
+            dialed = telephone_svc.dial(DialInput(line="cap", message="q", wait_s=0))
+            answered = telephone_svc.answer(AnswerInput(line="cap", wait_s=0))
+            assert answered.seat
+            last = telephone_svc.say(
+                SayInput(line="cap", seat=answered.seat, text="bye", wait_s=0)
+            )
+        assert last.outcome == "ended"
+        assert dialed.seat
+        heard = telephone_svc.listen(
+            ListenInput(line="cap", seat=dialed.seat, wait_s=0)
+        )
+        assert heard.outcome == "ended" and heard.messages[0].text == "bye"
 
     def test_answer_with_nobody_dialing(self):
         view = telephone_svc.answer(AnswerInput(line="empty", wait_s=0))

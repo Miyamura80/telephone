@@ -7,6 +7,7 @@ passthrough while keeping the pure service callable via `tool.call()`.
 import asyncio
 import contextvars
 import os
+import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
@@ -22,6 +23,8 @@ from mcp.types import (
     TextContent,
 )
 from pydantic import BaseModel
+
+from src.utils.cancellation import bind_cancel_event, unbind_cancel_event
 
 # Long-blocking service calls (a telephone `listen` can wait minutes for the
 # other agent) run on their own pool so they never starve the default thread
@@ -86,15 +89,26 @@ class EnhancedTool[TInput: BaseModel, TOutput: BaseModel]:
         a copy of the current context so ``current_user`` still resolves.
         """
         loop = asyncio.get_running_loop()
-        context = contextvars.copy_context()
+        cancel = threading.Event()
+        token = bind_cancel_event(cancel)
+        try:
+            context = contextvars.copy_context()
+        finally:
+            unbind_cancel_event(token)
         future = loop.run_in_executor(_BLOCKING_POOL, context.run, self.call)
         started = loop.time()
-        while True:
-            done, _ = await asyncio.wait({future}, timeout=interval_s)
-            if done:
-                return future.result()
-            elapsed = round(loop.time() - started)
-            await self._ctx.report_progress(progress=elapsed, message=message)
+        try:
+            while True:
+                done, _ = await asyncio.wait({future}, timeout=interval_s)
+                if done:
+                    return future.result()
+                elapsed = round(loop.time() - started)
+                await self._ctx.report_progress(progress=elapsed, message=message)
+        except BaseException:
+            # Abandoned (client gone, cancelled, progress send failed): tell the
+            # worker to stop waiting so it does not consume messages for no one.
+            cancel.set()
+            raise
 
     @property
     def can_elicit(self) -> bool:

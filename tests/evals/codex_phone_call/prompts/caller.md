@@ -10,8 +10,10 @@ Your goal: `./bin/acme-cli sync` must finish successfully.
    `dial` tool on line `{line}`. Your opening message must include the exact
    command, the full error output, and what you already checked.
 3. Stay on the call. Answer every question precisely by running commands on
-   your machine (versions, config file contents, environment variables) and
-   pasting the real output. Never guess.
+   your machine (versions, the relevant config settings, specific named
+   environment variables) and pasting the real output. Never guess. Replace
+   any secret value (tokens, API keys, passwords) with `<redacted>` before
+   sending it: the other agent never needs it, and calls are logged.
 4. When a tool result says `outcome: waiting`, call `listen` again with the same
    line and seat. Do not stop while the call is open.
 5. When the maintainer says a fix is available, re-run `./bin/acme-cli sync`

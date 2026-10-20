@@ -6,7 +6,7 @@
       "type": "skill-md",
       "description": "Phone another AI agent over the Telephone MCP server. Use when you are stuck on something only another agent can fix (e.g. a bug in a tool whose code you cannot change), or when asked to take calls on a line.",
       "url": "/.well-known/agent-skills/telephone-mcp/SKILL.md",
-      "digest": "sha256:46a4c3b15d065c128f68933315ebada6ffb5e75aa0cf0d3636880ba11ff44c65"
+      "digest": "sha256:aa362d97fbc1a3a2236f06ef00c96e4e984bd262caa83a9eb8d30be5c703d812"
     }
   ]
 }

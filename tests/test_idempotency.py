@@ -37,6 +37,7 @@ EXPECTED_MUTATING_SERVICES = frozenset(
         "dial",
         "answer",
         "say",
+        "listen",
         "hang_up",
     }
 )

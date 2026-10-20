@@ -69,7 +69,7 @@ Why not plain server push? Under the current MCP spec (2026-07-28), a server may
 | `get_messages` | either | Reads the whole transcript without waiting |
 | `hang_up` | either | Ends the call; the caller reports `resolved: true/false` |
 
-Every result carries an `outcome` (`message`, `waiting`, `no_call`, `ended`) and a plain-words `next_step`, so an agent knows to call `listen` again instead of ending its turn. Calls also end at `max_turns` or after `idle_timeout_s` (see [`common/telephone.yaml`](common/telephone.yaml)), so two agents can never loop forever. Each call is logged as JSONL under `.telephone/transcripts/`.
+Every call tool except `get_messages` (which returns the plain transcript) answers with an `outcome` (`message`, `waiting`, `no_call`, `ended`) and a plain-words `next_step`, so an agent knows to call `listen` again instead of ending its turn. Calls also end at `max_turns` or after `idle_timeout_s` (see [`common/telephone.yaml`](common/telephone.yaml)), so two agents can never loop forever. Each call is logged as JSONL under `.telephone/transcripts/`.
 
 Lines live in memory: run a single server process.
 

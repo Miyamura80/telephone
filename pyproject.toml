@@ -180,6 +180,7 @@ exclude = [
     "src/utils/stdin.py",
     "src/utils/context.py",
     "src/utils/current_user.py",
+    "src/utils/cancellation.py",
     "src/utils/interactive.py",
     "src/utils/progress.py",
     "src/utils/output.py",

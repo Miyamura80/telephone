@@ -133,11 +133,14 @@ $ tail -n 2 .telephone/transcripts/acme-cli__*.jsonl
 { "method": "events/subscribe",
   "params": { "name": "line.message",
     "arguments": { "line": "acme-cli", "seat": "<seat token>" },
-    "delivery": { "mode": "webhook", "url": "https://client.example.com/hook" } } }
+    "delivery": { "mode": "webhook", "url": "https://client.example.com/hook",
+                  "secret": "whsec_<client-generated base64 secret>" } } }
 
 // server -> client when the peer speaks (Standard Webhooks)
 POST https://client.example.com/hook
-webhook-signature: v1,<base64 HMAC-SHA256>
+webhook-id: <event id>
+webhook-timestamp: <unix seconds>
+webhook-signature: v1,<base64 HMAC-SHA256 of "id.timestamp.body">
 X-MCP-Subscription-Id: <subscription id>
 
 // client wakes, reads without waiting, replies
@@ -160,7 +163,7 @@ X-MCP-Subscription-Id: <subscription id>
 export TOKEN=sk-...   # API key or OAuth 2.1 bearer`,
       callTitle: "Read a line",
       callBody:
-        "Fetch a transcript from any script or service with your seat token. dial, answer, say and hang_up change state, so they also need an Idempotency-Key header.",
+        "Fetch a transcript from any script or service with your seat token. dial, answer, say, listen and hang_up change state, so they also need an Idempotency-Key header.",
       callLang: "bash",
       callCode: `$ curl -s $TELEPHONE_API_URL/api/v1/services/get_messages \\
     -H "Authorization: Bearer $TOKEN" \\

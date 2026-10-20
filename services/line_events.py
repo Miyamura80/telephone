@@ -28,7 +28,7 @@ from collections.abc import Callable
 from concurrent.futures import Executor, ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from loguru import logger as log
@@ -69,12 +69,38 @@ class Subscription:
 
 
 Sender = Callable[[str, bytes, dict[str, str]], int]
+Scheduler = Callable[[float, Callable[[], object]], None]
 
 
 def _http_send(url: str, body: bytes, headers: dict[str, str]) -> int:
+    """POST to the callback, connecting only to the address the guard approved.
+
+    Resolving once in the guard and again inside httpx would leave a DNS
+    rebinding window, so the request goes to the validated IP with the original
+    Host header and TLS server name (certificate checks still use the host).
+    """
+    target, host, address = url, None, _check_callback_url(url)
+    extensions: dict = {}
+    if address is not None:
+        parts = urlsplit(url)
+        host = parts.hostname or ""
+        literal = f"[{address}]" if ":" in address else address
+        netloc = f"{literal}:{parts.port}" if parts.port else literal
+        target = urlunsplit((parts.scheme, netloc, parts.path or "/", parts.query, ""))
+        headers = {**headers, "host": parts.netloc}
+        extensions = {"sni_hostname": host}
     timeout = global_config.telephone.events.request_timeout_s
     with httpx.Client(timeout=timeout, follow_redirects=False) as client:
-        return client.post(url, content=body, headers=headers).status_code
+        response = client.post(
+            target, content=body, headers=headers, extensions=extensions
+        )
+        return response.status_code
+
+
+def _schedule(delay_s: float, fn: Callable[[], object]) -> None:
+    timer = threading.Timer(delay_s, fn)
+    timer.daemon = True
+    timer.start()
 
 
 def decode_secret(secret: str) -> bytes:
@@ -97,21 +123,28 @@ def sign(secret: bytes, msg_id: str, timestamp: int, body: bytes) -> str:
     return "v1," + base64.b64encode(digest).decode()
 
 
-def _check_callback_url(url: str) -> None:
-    """Reject non-https and private-network callbacks (SSRF guard)."""
+def _check_callback_url(url: str) -> str | None:
+    """SSRF guard: require https and a host that resolves only to public IPs.
+
+    Returns the validated address to connect to, or None when insecure
+    callbacks are allowed (local testing), in which case nothing is pinned.
+    """
     if global_config.telephone.events.allow_insecure_callbacks:
-        return
-    parts = urlsplit(url)
-    if parts.scheme != "https" or not parts.hostname:
-        raise EventsError("delivery.url must be an https URL")
+        return None
     try:
-        infos = socket.getaddrinfo(parts.hostname, parts.port or 443)
-    except OSError as exc:
-        raise EventsError("delivery.url host does not resolve") from exc
-    for info in infos:
-        addr = ipaddress.ip_address(info[4][0])
-        if not addr.is_global:
-            raise EventsError("delivery.url must resolve to a public address")
+        parts = urlsplit(url)
+        port = parts.port or 443
+        if parts.scheme != "https" or not parts.hostname:
+            raise EventsError("delivery.url must be an https URL")
+        infos = socket.getaddrinfo(parts.hostname, port, proto=socket.IPPROTO_TCP)
+    except EventsError:
+        raise
+    except (OSError, ValueError) as exc:  # bad port, IDNA, unresolvable host
+        raise EventsError(f"delivery.url is not usable: {exc}") from exc
+    addresses = [str(info[4][0]) for info in infos]
+    if not addresses or not all(ipaddress.ip_address(a).is_global for a in addresses):
+        raise EventsError("delivery.url must resolve to a public address")
+    return addresses[0]
 
 
 def _iso(epoch: float) -> str:
@@ -128,14 +161,14 @@ class LineEvents:
         board: Switchboard,
         sender: Sender = _http_send,
         executor: Executor | None = None,
-        sleep: Callable[[float], None] = time.sleep,
+        schedule: Scheduler = _schedule,
     ) -> None:
         self._board = board
         self._sender = sender
         self._executor = executor or ThreadPoolExecutor(
             max_workers=4, thread_name_prefix="line-events"
         )
-        self._sleep = sleep
+        self._schedule = schedule
         self._lock = threading.Lock()
         self._subs: dict[str, Subscription] = {}
         board.add_listener(self.on_event)
@@ -180,7 +213,9 @@ class LineEvents:
         cfg = global_config.telephone.events
         args = params.arguments
         # Raises a TelephoneError (a ValueError) if the seat is not on the call.
-        self._board.transcript(args.line, args.seat, after_seq=10**9)
+        call = self._board.transcript(args.line, args.seat, after_seq=10**9)
+        if call.status == "ended":
+            raise EventsError(f"the call on line {args.line!r} has already ended")
         _check_callback_url(params.delivery.url)
         secret = decode_secret(params.delivery.secret)
         ttl_s = cfg.default_ttl_s if params.ttl_ms is None else params.ttl_ms / 1000
@@ -234,7 +269,7 @@ class LineEvents:
                 and sub.seat in event.recipient_seats
             ]
         for sub in targets:
-            self._executor.submit(self._deliver, sub, self._payload(name, event))
+            self._executor.submit(self._attempt, sub.id, self._payload(name, event), 0)
 
     def _payload(self, name: str, event: CallEvent) -> dict:
         data: dict = {"line": event.line, "call_id": event.call_id}
@@ -253,44 +288,52 @@ class LineEvents:
             "cursor": cursor,
         }
 
-    def _deliver(self, sub: Subscription, payload: dict) -> None:
-        cfg = global_config.telephone.events
-        try:
-            # Re-check at send time: DNS may have changed since subscribe.
-            _check_callback_url(sub.url)
-        except EventsError as exc:
-            log.warning("dropping subscription {}: {}", sub.id, exc)
-            with self._lock:
-                self._subs.pop(sub.id, None)
+    def _attempt(self, sub_id: str, payload: dict, attempt: int) -> None:
+        """One delivery attempt; retries are scheduled, never slept in a worker."""
+        with self._lock:
+            sub = self._subs.get(sub_id)
+        if sub is None:  # unsubscribed, expired, or dropped since queued
             return
         body = json.dumps(payload, separators=(",", ":")).encode()
-        for attempt in range(cfg.max_attempts):
-            timestamp = int(time.time())
-            headers = {
-                "content-type": "application/json",
-                "webhook-id": payload["eventId"],
-                "webhook-timestamp": str(timestamp),
-                "webhook-signature": sign(
-                    sub.secret, payload["eventId"], timestamp, body
-                ),
-                "X-MCP-Subscription-Id": sub.id,
-            }
-            try:
-                status = self._sender(sub.url, body, headers)
-            except httpx.HTTPError as exc:
-                log.warning("event delivery to {} failed: {}", sub.url, exc)
-                status = 0
-            if 200 <= status < 300:
-                return
-            if status in (410, 413):
-                log.info("dropping subscription {} after HTTP {}", sub.id, status)
-                with self._lock:
-                    self._subs.pop(sub.id, None)
-                return
-            if attempt + 1 < cfg.max_attempts:
-                backoff = cfg.backoff_s[min(attempt, len(cfg.backoff_s) - 1)]
-                self._sleep(backoff)
-        log.warning("gave up delivering {} to {}", payload["eventId"], sub.url)
+        timestamp = int(time.time())
+        headers = {
+            "content-type": "application/json",
+            "webhook-id": payload["eventId"],
+            "webhook-timestamp": str(timestamp),
+            "webhook-signature": sign(sub.secret, payload["eventId"], timestamp, body),
+            "X-MCP-Subscription-Id": sub.id,
+        }
+        try:
+            status = self._sender(sub.url, body, headers)
+        except EventsError as exc:  # callback now resolves somewhere private
+            log.warning("dropping subscription {}: {}", sub.id, exc)
+            self._drop(sub.id)
+            return
+        except httpx.HTTPError as exc:
+            log.warning("event delivery to {} failed: {}", sub.url, exc)
+            status = 0
+        if 200 <= status < 300:
+            return
+        if status == 410:
+            log.info("dropping subscription {}: receiver answered 410", sub.id)
+            self._drop(sub.id)
+            return
+        if status == 413:
+            log.warning("receiver rejected event {} as too large", payload["eventId"])
+            return
+        cfg = global_config.telephone.events
+        if attempt + 1 >= cfg.max_attempts:
+            log.warning("gave up delivering {} to {}", payload["eventId"], sub.url)
+            return
+        backoff = cfg.backoff_s[min(attempt, len(cfg.backoff_s) - 1)]
+        self._schedule(
+            backoff,
+            lambda: self._executor.submit(self._attempt, sub_id, payload, attempt + 1),
+        )
+
+    def _drop(self, sub_id: str) -> None:
+        with self._lock:
+            self._subs.pop(sub_id, None)
 
 
 line_events = LineEvents(switchboard)

@@ -295,15 +295,20 @@ class LineEvents:
                 self._executor.submit(self._drain, receiver)
 
     def _drain(self, receiver: tuple[str, str]) -> None:
-        while True:
+        try:
+            while True:
+                with self._lock:
+                    queue = self._queues.get(receiver)
+                    if not queue:
+                        self._queues.pop(receiver, None)
+                        return
+                    sub_id, payload = queue.popleft()
+                self._attempt(sub_id, payload, 0)
+        finally:
+            # Also on an unexpected error, so the next event starts a new drain
+            # instead of queueing forever behind a dead one.
             with self._lock:
-                queue = self._queues.get(receiver)
-                if not queue:
-                    self._queues.pop(receiver, None)
-                    self._draining.discard(receiver)
-                    return
-                sub_id, payload = queue.popleft()
-            self._attempt(sub_id, payload, 0)
+                self._draining.discard(receiver)
 
     def _prune_expired_locked(self, now: float) -> None:
         for sub_id in [s for s, sub in self._subs.items() if sub.expires_at < now]:

@@ -240,6 +240,23 @@ class TestLineEvents(TestTemplate):
         pool.shutdown(wait=True)
         assert order == ["line.message", "line.ended"]
 
+    def test_a_crashed_delivery_does_not_wedge_the_receiver(self):
+        board, events, _, implementer, sent, _ = _setup([])
+        calls = 0
+
+        def flaky(url, body, headers):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RuntimeError("unexpected")  # logged by the board
+            sent.append(headers)
+            return 200
+
+        events._sender = flaky
+        board.say("ev", implementer, "one")
+        board.say("ev", implementer, "two")
+        assert len(sent) == 1 and events._draining == set()
+
     def test_short_ttl_is_rejected_and_secret_is_hidden(self):
         params = {
             "name": "line.message",

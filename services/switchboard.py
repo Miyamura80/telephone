@@ -146,8 +146,10 @@ class Switchboard:
             with self._cond:
                 events, self._pending = self._pending, []
                 writes, self._pending_writes = self._pending_writes, []
-            _write_transcripts(writes)
-            self._emit(events)
+            try:
+                _write_transcripts(writes)
+            finally:  # a failed write must never cost listeners their events
+                self._emit(events)
 
     def _emit(self, events: list[CallEvent]) -> None:
         for event in events:

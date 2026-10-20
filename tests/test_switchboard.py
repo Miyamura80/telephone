@@ -209,6 +209,17 @@ class TestSwitchboardRegressions(TestTemplate):
         # The seat is still free for the implementer who is really there.
         assert board.answer("bug-1", wait_s=0) is not None
 
+    def test_a_failing_transcript_write_does_not_break_the_call(self):
+        board = Switchboard()
+        events = []
+        board.add_listener(events.append)
+        with patch("services.switchboard.os.open", side_effect=ValueError("boom")):
+            _, caller, implementer = _connect(board)
+            board.say("bug-1", implementer, "still delivered")
+        assert [e.kind for e in events] == ["message", "message"]
+        _, _, fresh = board.wait_for_peer("bug-1", caller, 0)
+        assert [m.text for m in fresh] == ["still delivered"]
+
     def test_transcripts_are_owner_only(self, tmp_path):
         board = Switchboard()
         call, _, _ = _connect(board)

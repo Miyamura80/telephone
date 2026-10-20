@@ -146,10 +146,8 @@ class Switchboard:
             with self._cond:
                 events, self._pending = self._pending, []
                 writes, self._pending_writes = self._pending_writes, []
-            try:
-                _write_transcripts(writes)
-            finally:  # a failed write must never cost listeners their events
-                self._emit(events)
+            _write_transcripts(writes)  # never raises: a best-effort side log
+            self._emit(events)
 
     def _emit(self, events: list[CallEvent]) -> None:
         for event in events:
@@ -412,7 +410,9 @@ def _write_transcripts(writes: list[tuple[Path, str]]) -> None:
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
             with os.fdopen(fd, "a") as fh:
                 fh.write(line)
-        except OSError:
+        except Exception:  # noqa: BLE001
+            # Best-effort side log: a failed write must never fail a call that
+            # already changed state, or cost listeners their events.
             log.exception("could not write transcript {}", path)
 
 

@@ -7,7 +7,7 @@
 `skills/<name>/SKILL.md` is the single source of truth for every self-published
 agent skill (the layout skills.sh crawls on GitHub). This script mirrors each
 skill into the landing page's discovery tree so the same content is served at
-`https://gmailmcp.com/.well-known/agent-skills/...`:
+`https://telephone.example.com/.well-known/agent-skills/...`:
 
 - copies `skills/<name>/SKILL.md` -> `landing-page/public/.well-known/agent-skills/<name>/SKILL.md`
 - regenerates `landing-page/public/.well-known/agent-skills/index.json` with a
@@ -63,9 +63,8 @@ def _build(src: Path) -> tuple[dict[str, str], dict[str, str]]:
 
 def generate() -> tuple[dict[Path, str], set[str]]:
     """Compute the generated files (path -> content) and the live skill names."""
+    # Zero skills is valid: the index is then published with an empty list.
     sources = sorted(SKILLS_SRC.glob("*/SKILL.md"))
-    if not sources:
-        raise SystemExit(f"no skills found under {SKILLS_SRC}")
     files: dict[Path, str] = {}
     entries: list[dict[str, str]] = []
     names: set[str] = set()

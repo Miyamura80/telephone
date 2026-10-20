@@ -11,11 +11,11 @@ MCP, and REST transports really are serving the same function.
 Every example assumes these two variables:
 
 ```bash
-export MYMCP_API="http://localhost:8000"
-export MYMCP_API_KEY="sk_live_..."
+export TELEPHONE_API="http://localhost:8000"
+export TELEPHONE_API_KEY="sk_live_..."
 ```
 
-Point `MYMCP_API` at your deployment's base URL to run the same commands against
+Point `TELEPHONE_API` at your deployment's base URL to run the same commands against
 production.
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
@@ -30,7 +30,7 @@ import { Step, Steps } from 'fumadocs-ui/components/steps';
 No authentication needed - this is the endpoint to point a load balancer at.
 
 ```bash
-curl -sS "$MYMCP_API/health"
+curl -sS "$TELEPHONE_API/health"
 ```
 
 ```json
@@ -56,8 +56,8 @@ curl -sS "$MYMCP_API/health"
 ### Confirm your key works
 
 ```bash
-curl -sS "$MYMCP_API/api/v1/auth/me" \
-  -H "Authorization: Bearer $MYMCP_API_KEY"
+curl -sS "$TELEPHONE_API/api/v1/auth/me" \
+  -H "Authorization: Bearer $TELEPHONE_API_KEY"
 ```
 
 ```json
@@ -77,8 +77,8 @@ Every tool is `POST /api/v1/services/{tool_name}` with the tool's input model as
 the body. Nothing about the route changes from one tool to the next.
 
 ```bash
-curl -sS -X POST "$MYMCP_API/api/v1/services/greet" \
-  -H "Authorization: Bearer $MYMCP_API_KEY" \
+curl -sS -X POST "$TELEPHONE_API/api/v1/services/greet" \
+  -H "Authorization: Bearer $TELEPHONE_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"name": "Alice", "shout": true}'
 ```
@@ -90,9 +90,9 @@ curl -sS -X POST "$MYMCP_API/api/v1/services/greet" \
 </Step>
 </Steps>
 
-## One registry, three transports
+## One registry, every transport
 
-The same service answers on all three interfaces, so these three commands
+The same service answers on every interface it is exposed on, so these commands
 produce the same result. This is the property worth testing in CI when you add a
 tool - drift between transports means someone bypassed the registry.
 
@@ -100,8 +100,8 @@ tool - drift between transports means someone bypassed the registry.
 <Tab value="REST">
 
 ```bash
-curl -sS -X POST "$MYMCP_API/api/v1/services/greet" \
-  -H "Authorization: Bearer $MYMCP_API_KEY" \
+curl -sS -X POST "$TELEPHONE_API/api/v1/services/greet" \
+  -H "Authorization: Bearer $TELEPHONE_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"name": "Alice", "shout": true}'
 ```
@@ -110,24 +110,23 @@ curl -sS -X POST "$MYMCP_API/api/v1/services/greet" \
 <Tab value="CLI">
 
 ```bash
-uv run mymcp greet Alice --shout
+uv run telephone greet Alice --shout
 ```
 
 </Tab>
 <Tab value="MCP">
 
-```text
-Greet Alice, shouting.
-```
-
-Your assistant calls the `greet` tool over the MCP endpoint at `/mcp`. See
-[MCP Setup](/docs/mcp/setup).
+`greet` is an operational service, so it is kept off the MCP surface; an
+LLM-facing service registers on `/mcp` with no extra code, and your assistant
+calls it by name. The MCP tool surface is empty until the call tools ship - see
+[MCP Tools](/docs/mcp/tools) and [MCP Setup](/docs/mcp/setup).
 
 </Tab>
 </Tabs>
 
 Adding a tool means writing one `@service` function - the REST route, the CLI
-surface, and the MCP tool all follow from it.
+surface, and (unless it is excluded as operational) the MCP tool all follow
+from it.
 
 ## Scripting a batch
 
@@ -138,8 +137,8 @@ import os
 
 import httpx
 
-API = os.environ["MYMCP_API"]
-KEY = os.environ["MYMCP_API_KEY"]
+API = os.environ["TELEPHONE_API"]
+KEY = os.environ["TELEPHONE_API_KEY"]
 NAMES = ["Alice", "Bob", "Carol"]
 
 with httpx.Client(base_url=API, headers={"Authorization": f"Bearer {KEY}"}) as client:
@@ -159,8 +158,8 @@ a change of endpoint name and body - not of structure.
 ## Reading and writing config
 
 ```bash
-curl -sS -X POST "$MYMCP_API/api/v1/services/config_get" \
-  -H "Authorization: Bearer $MYMCP_API_KEY" \
+curl -sS -X POST "$TELEPHONE_API/api/v1/services/config_get" \
+  -H "Authorization: Bearer $TELEPHONE_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"key": "llm_config.cache_enabled"}'
 ```
@@ -173,8 +172,8 @@ curl -sS -X POST "$MYMCP_API/api/v1/services/config_get" \
 requires an `Idempotency-Key`:
 
 ```bash
-curl -sS -X POST "$MYMCP_API/api/v1/services/config_set" \
-  -H "Authorization: Bearer $MYMCP_API_KEY" \
+curl -sS -X POST "$TELEPHONE_API/api/v1/services/config_set" \
+  -H "Authorization: Bearer $TELEPHONE_API_KEY" \
   -H "Idempotency-Key: $(uuidgen)" \
   -H "Content-Type: application/json" \
   -d '{"key": "logging.verbose", "value": "true"}'
@@ -241,7 +240,7 @@ full request and response schema - point a client generator at it rather than
 hand-writing models.
 
 ```bash
-curl -sS "$MYMCP_API/openapi.json" | jq -r '.paths | keys[]' | grep services
+curl -sS "$TELEPHONE_API/openapi.json" | jq -r '.paths | keys[]' | grep services
 ```
 
 The unauthenticated root path describes the deployment to whoever - or whatever

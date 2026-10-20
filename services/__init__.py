@@ -29,7 +29,7 @@ class ConnectRequiredError(Exception):
     """A service call requires the user to first complete an external connect flow.
 
     Transport-agnostic contract: each integration that links a third-party
-    account (Gmail today; any future OAuth-backed service) raises its own
+    account (any OAuth-backed service) raises its own
     subclass so transports can offer a recovery affordance without importing
     the feature - the MCP layer converts this into a SEP-1036 URL elicitation
     carrying ``build_auth_url()``. Two obligations on subclasses:

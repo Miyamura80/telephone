@@ -92,46 +92,6 @@ forbidden_modules =
     tests
     init
 
-[importlinter:contract:pdf_core_isolated_from_gmail]
-# The PDF form/signing domain is designed to be extractable as a standalone
-# add-on. All Gmail knowledge lives in services.pdf_gmail_bridge (the only
-# module importing both sides); the PDF core must never grow a direct
-# dependency on Gmail modules or the bridge itself.
-# See tasks/prd-pdf-forms-digital-signatures.md (isolation seam).
-name = PDF core does not import Gmail (add-on extraction seam)
-type = forbidden
-source_modules =
-    services.pdf_forms_svc
-    services.pdf_inspect
-    services.pdf_render
-    services.pdf_edit_engine
-    services.pdf_overlay
-    services.pdf_signing
-    services.pdf_documents_repo
-    services.pdf_ports
-    models.pdf_forms
-    db.models.pdf_documents
-    mcp_server.app_tools.pdf_signer
-    mcp_server.enhancers.pdf_forms
-# MAINTENANCE: import-linter wildcards can only replace a whole segment
-# (services.* would forbid far too much), so the Gmail modules are listed by
-# name. Any NEW Gmail module (services/gmail_*.py, models/gmail_*.py, ...)
-# MUST be added here or it silently escapes the contract - and when touching
-# this list, re-check the services/ and models/ trees for existing Gmail
-# modules that are missing.
-forbidden_modules =
-    services.pdf_gmail_bridge
-    services.gmail_svc
-    services.gmail_messages_svc
-    services.gmail_drafts_svc
-    services.gmail_draft_helpers
-    services.gmail_attachments_svc
-    services.gmail_curate_svc
-    services.gmail_watch_svc
-    services._gmail_fake_backend
-    models.gmail
-    models.gmail_watch
-
 [importlinter:contract:no_imports_from_tests]
 name = Tests are not imported by app code
 type = forbidden

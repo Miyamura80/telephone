@@ -1,0 +1,228 @@
+---
+/*
+ * Hero call mock: one scripted Telephone call between a caller agent and an
+ * implementer agent, rendered in the site's Hackbox style (Telephone is a
+ * server, not a chat UI, so there is no client chrome to imitate).
+ *
+ * The toggle picks a pairing (Codex + Codex, ChatGPT + Codex). Only the party
+ * header changes - who is calling and how each side hears back (long-poll
+ * listen vs. webhook wake). The transcript is identical, which is the point:
+ * same line, same conversation, whatever the client.
+ *
+ * Turns reveal one by one on a CSS loop (opacity only, so the card never
+ * reflows). Reduced-motion users see the full transcript. Decorative sample
+ * content; the toggle is the only interactive part.
+ */
+import { heroCall } from "../config/landing";
+
+const { line, pairings, defaultId, turns } = heroCall;
+
+const maskStyle = (logo: string) =>
+  `-webkit-mask:url('${logo}') center/contain no-repeat;mask:url('${logo}') center/contain no-repeat;`;
+
+// `inline code` spans -> [{ text, code }] segments.
+const segments = (text: string) =>
+  text.split("`").map((part, i) => ({ text: part, code: i % 2 === 1 }));
+
+const STEP = 2; // seconds between turns
+const LOOP = STEP * (turns.length + 3);
+
+// One keyframe set per reveal slot (turns + the hang-up line): hidden until
+// its slot, visible to the end of the loop, then everything clears together.
+const pct = (slot: number) => ((slot * STEP) / LOOP) * 100;
+const keyframes = Array.from({ length: turns.length + 1 }, (_, i) => {
+  const at = pct(i + 1);
+  return `@keyframes call-turn-${i}{0%,${at.toFixed(2)}%{opacity:0}${(at + 2).toFixed(2)}%,92%{opacity:1}97%,100%{opacity:0}}`;
+}).join("");
+---
+
+<style is:inline set:html={keyframes}></style>
+
+<div class="mx-auto w-full min-w-0 max-w-md" data-callmock style={`--loop:${LOOP}s`}>
+  <!-- Pairing toggle -->
+  <div
+    class="mb-3 grid grid-cols-2 border-2 border-border bg-surface-1"
+    role="tablist"
+    aria-label="Who is on the call"
+  >
+    {
+      pairings.map((p) => (
+        <button
+          type="button"
+          role="tab"
+          id={`call-tab-${p.id}`}
+          aria-controls={`call-panel-${p.id}`}
+          aria-selected={p.id === defaultId ? "true" : "false"}
+          tabindex={p.id === defaultId ? 0 : -1}
+          data-call-tab={p.id}
+          class="call-tab flex min-h-11 items-center justify-center gap-2 border-r-2 border-border px-2 font-mono text-xs font-semibold uppercase tracking-wider text-fg-muted transition last:border-r-0 hover:text-fg aria-selected:bg-accent aria-selected:text-accent-fg aria-selected:hover:text-accent-fg"
+        >
+          <span class="size-4 shrink-0 bg-current" style={maskStyle(p.caller.logo)} aria-hidden="true" />
+          <span aria-hidden="true">+</span>
+          <span class="size-4 shrink-0 bg-current" style={maskStyle(p.implementer.logo)} aria-hidden="true" />
+          <span class="sr-only">{p.label}</span>
+        </button>
+      ))
+    }
+  </div>
+
+  <div class="relative border-2 border-accent bg-surface-1">
+    <!-- Hackbox corner tag -->
+    <div class="flex items-center justify-between gap-3 border-b-2 border-border">
+      <span class="flex h-8 items-center gap-2 bg-accent px-3 font-mono text-xs font-bold uppercase tracking-widest text-accent-fg">
+        line: {line}
+      </span>
+      <span class="mr-3 inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-wider text-fg-muted">
+        <span class="live-dot size-1.5 rounded-full bg-circuit"></span>
+        connected
+      </span>
+    </div>
+
+    <!-- Parties (swapped by the toggle) -->
+    {
+      pairings.map((p) => (
+        <div
+          role="tabpanel"
+          id={`call-panel-${p.id}`}
+          aria-labelledby={`call-tab-${p.id}`}
+          data-call-panel={p.id}
+          hidden={p.id !== defaultId}
+          class="grid grid-cols-[1fr_auto_1fr] items-center gap-2 border-b border-border px-3 py-3 sm:px-4"
+        >
+          {[p.caller, p.implementer].map((party, i) => (
+            <>
+              {i === 1 && (
+                <svg class="h-4 w-12 text-accent/60 sm:w-16" viewBox="0 0 64 16" fill="none" aria-hidden="true">
+                  <path d="M2 8h60" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 3" class="wire" />
+                  <path d="M2 8l5-4M2 8l5 4M62 8l-5-4M62 8l-5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                </svg>
+              )}
+              <div class={`min-w-0 ${i === 1 ? "text-right" : ""}`}>
+                <div class={`flex items-center gap-1.5 ${i === 1 ? "justify-end" : ""}`}>
+                  <span class="size-4 shrink-0 bg-fg" style={maskStyle(party.logo)} aria-hidden="true" />
+                  <span class="truncate text-sm font-semibold">{party.name}</span>
+                </div>
+                <p class="mt-0.5 truncate font-mono text-[10px] uppercase tracking-wider text-fg-muted">
+                  {party.role} · {party.delivery}
+                </p>
+              </div>
+            </>
+          ))}
+        </div>
+      ))
+    }
+
+    <!-- Transcript -->
+    <ol class="space-y-2.5 px-3 py-4 sm:px-4" aria-label="Call transcript">
+      {
+        turns.map((t, i) => (
+          <li
+            class={`turn flex ${t.from === "implementer" ? "justify-end" : ""}`}
+            style={`animation-name:call-turn-${i}`}
+          >
+            <div
+              class={`max-w-[85%] border px-3 py-2 ${
+                t.from === "implementer" ? "border-accent/40 bg-accent/10" : "border-border bg-bg"
+              }`}
+            >
+              <p class="font-mono text-[10px] uppercase tracking-wider text-fg-muted">
+                {t.from} · {t.tool}
+              </p>
+              <p class="mt-1 text-[13px] leading-snug text-fg">
+                {segments(t.text).map((s) =>
+                  s.code ? <code class="font-mono text-[12px] text-accent">{s.text}</code> : s.text,
+                )}
+              </p>
+            </div>
+          </li>
+        ))
+      }
+    </ol>
+
+    <p
+      class="turn border-t border-border px-3 py-2 text-center font-mono text-[10px] uppercase tracking-wider text-fg-muted sm:px-4"
+      style={`animation-name:call-turn-${turns.length}`}
+    >
+      hang_up · call ended
+    </p>
+  </div>
+</div>
+
+<style>
+  /* Each turn's keyframes (call-turn-N, generated above) fade it in at its
+     slot within the shared --loop. Opacity only: space stays reserved. */
+  .turn {
+    animation-duration: var(--loop);
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+  }
+
+  .live-dot {
+    animation: live 1.6s ease-in-out infinite;
+  }
+  @keyframes live {
+    50% { opacity: 0.3; }
+  }
+  .wire {
+    animation: wire 1.2s linear infinite;
+  }
+  @keyframes wire {
+    to { stroke-dashoffset: -12; }
+  }
+
+  [data-callmock]:hover *,
+  [data-callmock]:focus-within * {
+    animation-play-state: paused;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .turn,
+    .live-dot,
+    .wire {
+      /* !important beats the inline animation-name on each turn. */
+      animation-name: none !important;
+    }
+  }
+</style>
+
+<script>
+  function initCallMock() {
+    document.querySelectorAll<HTMLElement>("[data-callmock]").forEach((root) => {
+      if (root.dataset.callmockReady === "true") return;
+      root.dataset.callmockReady = "true";
+
+      const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>(".call-tab"));
+      const panels = root.querySelectorAll<HTMLElement>("[data-call-panel]");
+
+      const select = (tab: HTMLButtonElement) => {
+        tabs.forEach((t) => {
+          const on = t === tab;
+          t.setAttribute("aria-selected", String(on));
+          t.tabIndex = on ? 0 : -1;
+        });
+        panels.forEach((p) => {
+          p.hidden = p.dataset.callPanel !== tab.dataset.callTab;
+        });
+      };
+
+      tabs.forEach((tab, i) => {
+        tab.addEventListener("click", () => select(tab));
+        // WAI-ARIA tabs: Left/Right move and activate, Home/End jump.
+        tab.addEventListener("keydown", (e) => {
+          let next = -1;
+          if (e.key === "ArrowRight") next = (i + 1) % tabs.length;
+          else if (e.key === "ArrowLeft") next = (i - 1 + tabs.length) % tabs.length;
+          else if (e.key === "Home") next = 0;
+          else if (e.key === "End") next = tabs.length - 1;
+          else return;
+          e.preventDefault();
+          select(tabs[next]);
+          tabs[next].focus();
+        });
+      });
+    });
+  }
+
+  initCallMock();
+  document.addEventListener("astro:page-load", initCallMock);
+</script>

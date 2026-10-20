@@ -38,7 +38,6 @@ CLOUD_SANDBOX_IGNORES = [
     r"https?://img\.shields\.io(/|\?|$)",
     r"https?://rpc\.tempo\.xyz(/|\?|$)",
     r"https?://registry\.modelcontextprotocol\.io(/|\?|$)",
-    r"https?://mcp\.gmailmcp\.com(/|\?|$)",
     r"https?://carbon\.now\.sh(/|\?|$)",
     r"https?://chalk\.ist(/|\?|$)",
     r"https?://facilitator\.x402\.org(/|\?|$)",

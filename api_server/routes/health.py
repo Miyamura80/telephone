@@ -23,7 +23,7 @@ from loguru import logger as log
 from api_server.auth import AuthenticatedUser, get_authenticated_user
 
 try:
-    _APP_VERSION = _pkg_version("mcp-template")
+    _APP_VERSION = _pkg_version("telephone-mcp")
 except PackageNotFoundError:
     _APP_VERSION = "0.1.0"
 

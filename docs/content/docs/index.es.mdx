@@ -1,58 +1,112 @@
 ---
-title: Inicio Rapido
-description: Comienza con MCP Template
+title: Telephone
+description: Una centralita MCP que permite a dos agentes de IA mantener una conversación bidireccional sin ninguna persona de por medio.
 ---
 
-MCP Template te ofrece tres formas de interactuar con el mismo conjunto de herramientas:
+import { Terminal, Bot, Globe, Rocket, Ship } from 'lucide-react';
 
-- **CLI** - Ejecuta comandos en tu terminal
-- **MCP** - Conecta asistentes de IA como Claude directamente
-- **REST API** - Llama a endpoints por HTTP con autenticacion
+Telephone es un servidor MCP que funciona como centralita. Dos clientes MCP (por
+ejemplo, dos instancias de Codex CLI, o ChatGPT y Codex) se conectan a él, y
+Telephone transmite una conversación bidireccional entre ambos sin que nadie
+tenga que copiar y pegar mensajes. Un solo servidor aloja muchas **lines**
+(líneas) con nombre, así que pueden coexistir varias llamadas.
 
-Elige la interfaz que mejor se adapte a tu flujo de trabajo, o usa las tres.
+<Callout type="info" title="Estado">
+Esta versión solo renombra y reinicializa el proyecto. Las herramientas de
+llamada (`dial`, `answer`, `say`, `listen`, `get_messages`, `hang_up`) llegan en
+la próxima versión, por lo que la superficie de herramientas MCP está vacía por
+ahora. Consulta
+[Coming next: call tools](/docs/mcp/tools#coming-next-call-tools-planned).
+</Callout>
 
-## Instalacion
+## Ejemplo: un reporte de bug entre agentes
 
-import { Step, Steps } from 'fumadocs-ui/components/steps';
+Un agente **caller** (quien llama) usa una herramienta CLI y encuentra un bug.
+No puede modificar la herramienta, pero un agente **implementer** (quien
+implementa) en otro lugar tiene el código fuente. En lugar de que una persona
+pase los mensajes entre ellos:
 
-<Steps>
-<Step>
+1. El caller hace `dial` a una línea y describe el fallo.
+2. El implementer responde con `answer` y hace preguntas de diagnóstico con `say` (qué flags, qué versión, el error completo).
+3. El caller responde cada pregunta desde su propio entorno.
+4. El implementer corrige el bug y le pide al caller que vuelva a intentarlo.
+5. El caller confirma la corrección, y cualquiera de los dos puede hacer `hang_up`.
 
-### Instalar desde el codigo fuente
+## Cómo funciona
 
-```bash
-git clone https://github.com/Miyamura80/MCP-Template.git
-cd MCP-Template
-uv sync
+```text
+  caller agent                  Telephone                  implementer agent
+  (Codex CLI)                 (one server)                 (ChatGPT or Codex)
+ +-------------+           +-----------------+           +------------------+
+ |             |  MCP      |  line "bug-123" |   MCP     |                  |
+ |  say/listen |---------->|  +-----------+  |<----------| answer/say       |
+ |             |<----------|  | transcript|  |---------->|                  |
+ +-------------+  held     |  +-----------+  |  signed   +------------------+
+                  open     |  line "deploy"  |  webhook
+                  until    |  line ...       |  (MCP Events)
+                  peer     +-----------------+  wakes the
+                  speaks                        client
 ```
 
-</Step>
-<Step>
+Cada lado necesita saber cuándo ha hablado el otro, y Telephone ofrece dos modos
+de entrega para ello:
 
-### Verificar la instalacion
+- **Long-poll** para CLIs de agentes como Codex: `say` y `listen` mantienen
+  abierta la llamada a la herramienta en el servidor y regresan en cuanto el otro
+  lado habla, así el agente sigue en la línea dentro de su propio bucle de
+  herramientas.
+- **MCP Events** para ChatGPT: el servidor envía un webhook firmado que despierta
+  al cliente cuando llega un mensaje (especificación en borrador).
 
-```bash
-uv run mymcp --version
-uv run mymcp --help
-```
+Debajo de la centralita hay un registro de servicios compartido expuesto de tres
+formas: una CLI (`telephone`), el endpoint MCP (streamable HTTP en `/mcp`) y una
+API REST autenticada.
 
-</Step>
-<Step>
-
-### Probar un comando
-
-```bash
-uv run mymcp greet Alice
-# Hello, Alice!
-```
-
-</Step>
-</Steps>
+<Cards>
+  <Card
+    icon={<Rocket />}
+    title="Inicio Rápido"
+    href="/docs/quickstart"
+    description="Instala Telephone y ejecuta tu primer comando en menos de un minuto."
+  />
+</Cards>
 
 ## Elige tu interfaz
 
 <Cards>
-  <Card title="CLI" href="/docs/cli" />
-  <Card title="MCP Server" href="/docs/mcp" />
-  <Card title="REST API" href="/docs/api" />
+  <Card
+    icon={<Bot />}
+    title="MCP Server"
+    href="/docs/mcp"
+    description="Conecta Codex, ChatGPT, Claude y otros clientes MCP."
+  />
+  <Card
+    icon={<Terminal />}
+    title="CLI"
+    href="/docs/cli"
+    description="Ejecuta comandos en tu terminal con el binario telephone."
+  />
+  <Card
+    icon={<Globe />}
+    title="REST API"
+    href="/docs/api"
+    description="Llama a endpoints HTTP autenticados desde cualquier cliente."
+  />
 </Cards>
+
+## Despliegue
+
+<Cards>
+  <Card
+    icon={<Ship />}
+    title="Despliegue"
+    href="/docs/deployment"
+    description="Ejecuta el servidor completo en tu propia infraestructura."
+  />
+</Cards>
+
+## Licencia y precios
+
+Telephone es open source bajo la [licencia MIT](https://github.com/Miyamura80/telephone/blob/main/LICENSE): puedes usarlo, modificarlo y alojarlo tú mismo para siempre, **sin cuota de instalación ni coste de licencia**. El servidor completo se ejecuta en tu propia infraestructura.
+
+El alojamiento gestionado y el soporte para equipos están disponibles como planes de pago opcionales (despliegue alojado, monitorización, SSO/registros de auditoria, SLA y licencias comerciales/OEM). El detalle completo está en la página del producto, con un manifiesto legible por máquinas en `/pricing.md` para agentes que comparan opciones.

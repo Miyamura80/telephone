@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Super-opinionated Python template that ships **one codebase, three interfaces** (CLI, MCP server, HTTP API) over a shared service registry. Python >= 3.12 required. Uses `uv` for dependency management (not pip).
+**Telephone** (`telephone-mcp`): an MCP server that acts as a switchboard so two MCP clients (e.g. two Codex CLIs, or ChatGPT and Codex) can hold a two-way conversation with no human in the loop. Built on one codebase with **three interfaces** (CLI `telephone`, MCP server, HTTP API) over a shared service registry. Python >= 3.12 required. Uses `uv` for dependency management (not pip).
 
 **Before any other work in this repo, enable prek:** `uv tool install prek && prek install`. Hooks are defined in `prek.toml`.
 
@@ -24,7 +24,7 @@ make test_fast      # Run fast tests (no slow/nondeterministic)
 make test_flaky     # Repeat fast tests to detect flakiness
 make test_slow      # Run slow tests only
 make test_nondeterministic # Run nondeterministic tests only
-make mcp_conformance # MCPJam apps + protocol conformance vs local /mcp (needs node; CI-gated separately)
+make mcp_conformance # MCPJam protocol conformance vs local /mcp (needs node; CI-gated separately)
 
 # Code Quality (run after major changes)
 make fmt            # Run ruff formatter + JSON formatting
@@ -59,9 +59,9 @@ Layering (top calls down, never the reverse):
 
 ### Top-level layout
 
-- **`src/cli/app.py`** + **`src/cli/commands/`** - Typer CLI (`mymcp`); `src/cli/commands/__init__.py` auto-discovers `src/cli/commands/*.py` and registers them.
-- **`mcp_server/`** - FastMCP server. Primary transport is **streamable HTTP**, mounted on the FastAPI app at `/mcp` from `api_server/server.py` (one process, one port, shared auth/CORS). Stdio is legacy/dev-only via `mymcp-mcp`. `mcp_server/server.py:build_mcp_server` populates a single FastMCP singleton from the service registry; `mount_on` + `lifespan` handle the streamable-HTTP wiring. See [`mcp_server/COMMON_TERMS.md`](./mcp_server/COMMON_TERMS.md).
-- **`api_server/`** - FastAPI HTTP server (`auth/`, `billing/`, `middleware/`, `routes/`). Hosts the `/mcp` mount; the primary entrypoint is `mymcp-serve`.
+- **`src/cli/app.py`** + **`src/cli/commands/`** - Typer CLI (`telephone`); `src/cli/commands/__init__.py` auto-discovers `src/cli/commands/*.py` and registers them.
+- **`mcp_server/`** - FastMCP server. Primary transport is **streamable HTTP**, mounted on the FastAPI app at `/mcp` from `api_server/server.py` (one process, one port, shared auth/CORS). Stdio is legacy/dev-only via `telephone-mcp`. `mcp_server/server.py:build_mcp_server` populates a single FastMCP singleton from the service registry; `mount_on` + `lifespan` handle the streamable-HTTP wiring. See [`mcp_server/COMMON_TERMS.md`](./mcp_server/COMMON_TERMS.md).
+- **`api_server/`** - FastAPI HTTP server (`auth/`, `billing/`, `middleware/`, `routes/`). Hosts the `/mcp` mount; the primary entrypoint is `telephone-serve`.
 - **`services/`** - `@service(name=, description=, input_model=, output_model=)`-decorated pure functions (`services/__init__.py:20`).
 - **`common/`** - pydantic-settings config.
   - `global_config.yaml` - base; `<name>.yaml` - split configs loaded as root key `<name>`
@@ -216,7 +216,7 @@ async def my_enhanced(tool: EnhancedTool[MyInput, MyOutput]) -> MyOutput:
     if tool.can_elicit:
         ...  # await tool.elicit(...)
     if tool.can_show_app:
-        tool.send_app("ui://mymcp/my_dashboard")
+        tool.send_app("ui://telephone/my_dashboard")
     return result
 ```
 
@@ -244,20 +244,12 @@ See `mcp_server/MCP_UI_ARCHITECTURE.md` for design rationale and
   plus `tests/test_mcp_e2e.py`, which runs a full MCP session over the
   streamable-HTTP mount and asserts the wire format (outputSchema,
   `_meta.ui`, CallToolResult assembly). No Node needed.
-- **Conformance tier:** `make mcp_conformance` (MCPJam protocol + apps
-  suites, CI-gated, needs Node). OAuth conformance is manual - see
+- **Conformance tier:** `make mcp_conformance` (MCPJam protocol suite,
+  CI-gated, needs Node; the apps suite returns once an MCP App ships). OAuth conformance is manual - see
   `docs/content/docs/mcp/oauth.mdx`.
 - App frontends: vitest per app (`bun run test` in `mcp_server/apps/<name>/`,
   not in CI); each app has an `appContract.test.ts` pinning the real
   `ext-apps` `App` surface against the `McpAppLike` mock type.
-- **Rendered-iframe tier (L4, #37):** `make test_apps_e2e` drives the **real
-  Goose desktop GUI** (Electron) as an MCP client and asserts the `ui://` app
-  actually renders + round-trips in a real host - including a click →
-  `callServerTool` → re-render scenario. Also wired as a skipped-by-default pytest
-  entry (`tests/test_apps_e2e.py`, opt in with `RUN_APPS_E2E=1`) and an opt-in CI
-  workflow (`.github/workflows/apps_e2e.yaml`, `workflow_dispatch` + weekly). Build
-  + rationale: `.agents/skills/goose-gui-e2e/SKILL.md`. Heavy (Goose + Electron);
-  **not** in `make ci`.
 
 ## Subagents
 

@@ -49,7 +49,7 @@ def _coerce_value(value: str) -> bool | int | float | str | None:
 )
 def config_show(input: ConfigShowInput) -> ConfigShowResult:
     # YAML-only view: never expose environment-sourced secrets (API keys,
-    # BACKEND_DB_URI, GOOGLE_TOKEN_ENC_KEY, SESSION_SECRET_KEY, ...). This
+    # BACKEND_DB_URI, SESSION_SECRET_KEY, STRIPE_SECRET_KEY, ...). This
     # service is reachable over the authenticated HTTP transport.
     return ConfigShowResult(config=global_config.to_yaml_dict())
 

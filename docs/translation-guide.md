@@ -9,7 +9,7 @@ Keep the following in English (untranslated) in every locale.
 
 ### Product & brand names
 
-- MCP Template
+- Telephone
 - MCP (Model Context Protocol)
 - Fumadocs
 

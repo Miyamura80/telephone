@@ -24,10 +24,8 @@ from .config_models import (
     DefaultLlm,
     ExampleParent,
     FeaturesConfig,
-    GmailConfig,
     LlmConfig,
     LoggingConfig,
-    PdfFormsConfig,
     RateLimitConfig,
     ServerConfig,
     SubscriptionConfig,
@@ -205,8 +203,6 @@ class Config(BaseSettings):
     )
     ask: AskConfig = Field(default_factory=lambda: AskConfig())
     web_bot_auth: WebBotAuthConfig = Field(default_factory=lambda: WebBotAuthConfig())
-    gmail: GmailConfig = Field(default_factory=lambda: GmailConfig())
-    pdf_forms: PdfFormsConfig = Field(default_factory=lambda: PdfFormsConfig())
 
     # Environment variables
     DEV_ENV: str
@@ -257,36 +253,6 @@ class Config(BaseSettings):
 
     # Redis
     REDIS_URL: str | None = None
-
-    # Google OAuth (Gmail integration) - fill in real values in .env
-    GOOGLE_CLIENT_ID: str | None = None
-    GOOGLE_CLIENT_SECRET: str | None = None
-    GOOGLE_REDIRECT_URI: str | None = None
-    # Base64-url Fernet key used to encrypt stored refresh tokens
-    GOOGLE_TOKEN_ENC_KEY: str | None = None
-
-    # Gmail push notifications (Pub/Sub) + outbound webhook fan-out.
-    # All optional; if GMAIL_PUBSUB_TOPIC is unset the push pipeline stays
-    # dormant (no watch auto-start, no runner loop).
-    # Fully-qualified Pub/Sub topic, e.g. "projects/<proj>/topics/<topic>".
-    GMAIL_PUBSUB_TOPIC: str | None = None
-    # OIDC "aud" claim the push receiver requires on the Pub/Sub JWT.
-    GMAIL_PUSH_AUDIENCE: str | None = None
-    # OIDC "email" claim the push receiver requires (the push subscription's
-    # service account). Empty disables the identity check (dev only).
-    GMAIL_PUSH_SA_EMAIL: str | None = None
-    # How the periodic runner (watch renewal + outbox drain) is driven:
-    #   "off"      - no runner (default)
-    #   "loop"     - in-process asyncio loop started in the FastAPI lifespan
-    #   "endpoint" - driven externally by POSTing the internal /renew route
-    WEBHOOK_RUNNER_MODE: str = "off"
-    # Seconds between in-process runner ticks when WEBHOOK_RUNNER_MODE="loop".
-    WEBHOOK_RUNNER_INTERVAL_S: int = 30
-    # Max delivery attempts before an outbox row is marked "failed".
-    WEBHOOK_MAX_ATTEMPTS: int = 6
-    # Shared bearer required by the internal POST /api/v1/google/internal/renew
-    # endpoint (WEBHOOK_RUNNER_MODE="endpoint"). Unset -> endpoint disabled.
-    WEBHOOK_RUNNER_TOKEN: str | None = None
 
     # Runtime environment (computed via default_factory)
     is_local: bool = Field(
@@ -391,7 +357,7 @@ class Config(BaseSettings):
         The merged YAML layer (``global_config.yaml`` + split configs + the
         production overlay + ``.global_config.yaml``), captured once when this
         singleton was built. Every secret (API keys, ``BACKEND_DB_URI``,
-        ``GOOGLE_TOKEN_ENC_KEY``, ``SESSION_SECRET_KEY``, ...) loads from the
+        ``SESSION_SECRET_KEY``, ``STRIPE_SECRET_KEY``, ...) loads from the
         environment via a *different* settings source, so secrets are absent
         here by construction - this can never disclose one, even if a new secret
         field is added later. This is the safe view for the ``config_show`` /
@@ -473,9 +439,6 @@ _SECRET_FIELD_NAMES: frozenset[str] = frozenset(
         "STRIPE_TEST_SECRET_KEY",
         "STRIPE_WEBHOOK_SECRET",
         "STRIPE_TEST_WEBHOOK_SECRET",
-        "GOOGLE_CLIENT_SECRET",
-        "GOOGLE_TOKEN_ENC_KEY",
-        "WEBHOOK_RUNNER_TOKEN",
     }
 )
 

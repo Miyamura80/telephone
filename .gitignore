@@ -183,5 +183,6 @@ cython_debug/
 # MCPJam conformance run artifacts (make mcp_conformance)
 mcp_conformance_results/
 
-# Auto-generated dev PDF sealing certificate (services/pdf_signing.py)
-.pdf_signing/
+
+# Telephone call transcripts (common/telephone.yaml: transcript_dir)
+.telephone/

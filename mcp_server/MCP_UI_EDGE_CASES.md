@@ -42,8 +42,8 @@ Spec of edge cases for the MCP UI layer (enhancers, elicitation, MCP Apps, rich 
 | A4 | App-only tool surfaces to LLM | `meta={"ui": {"visibility": ["app"]}}` is convention, not spec. Some clients will expose these to the LLM. Acceptable; documented limitation. For hard isolation, run a second `FastMCP` instance app-tools-only (out of scope). |
 | A5 | App calls server tool that doesn't exist | `app.callServerTool({name})` round-trip returns `isError: true` with a "tool not found" message. Frontend handles via `ontoolresult` error branch. |
 | A6 | Dashboard JS tries to access network/storage | Iframe is sandboxed by the host. Most hosts disallow `fetch`, `localStorage`, top-level navigation. Plan UI accordingly - all state through `callServerTool`. |
-| A7 | Host doesn't implement `ui/update-model-context` | Composer pushes send/discard outcomes (final sent draft, discard notice) via `app.updateModelContext` so the model learns about user-initiated actions on app-only tools. The push is best-effort try/catch: on rejection the Sent/Discarded UI state is unaffected and no error is shown - the model just stays uninformed, which is the pre-push status quo. |
-| A8 | PDF signing on a host that neither hides app-only tools (A4) nor supports elicitation | Residual risk: such a host could let the model call `pdf_signer.sign` with a fabricated typed name - the soft visibility hint is the only pre-signature layer left. Signing therefore does NOT rely on visibility alone: (1) the server state machine only accepts a sign on `awaiting_signature`, a state entered exclusively via `pdf_request_signature`; (2) on elicitation-capable hosts a host-native confirmation dialog (which the model cannot answer) gates the seal; (3) every attempt - including aborts - lands in the audit trail (typed name, timestamp, channel, `confirmed_via_elicitation: false`), and the PAdES seal pins exactly what was signed, so a fabricated signature is detectable and attributable after the fact. Hard isolation (second FastMCP instance) remains out of scope per A4. **Transport note:** layer (2) additionally requires a stateful session (`server.mcp_stateless_http: false`, single replica) - under stateless HTTP the client's elicitation response cannot be correlated back to the per-request session (`ctx.elicit()` would hang; empirically verified, same mechanics as python-sdk issue 678 for sampling), so `check_client_capability` correctly reports unsupported (client_params is never populated) and the ceremony rests on layers (1) and (3) plus the in-app user gesture. Every elicitation call site MUST gate on the declared capability, never attempt-when-unknown. |
+| A7 | Host doesn't implement `ui/update-model-context` | An app pushes state the model should know about (e.g. a user action in the iframe) via `app.updateModelContext`. Without it there is no in-band channel: app-only tools (`visibility: ["app"]`) return results to the iframe, not the model. Known limitation: the model only learns the outcome if the app also asks the user to tell it, or a model-visible tool exposes the state on its next call. |
+| A8 | Consent-gated action on a host that neither hides app-only tools (A4) nor supports elicitation | Residual risk: such a host could let the model call an app-only tool that is meant to be user-initiated. Gate every such tool on a server-side token minted when the user opens the app, so a model-initiated call without that token is rejected. |
 
 ## Output schema
 
@@ -86,7 +86,7 @@ Spec of edge cases for the MCP UI layer (enhancers, elicitation, MCP Apps, rich 
 | ID | Scenario | Expected behavior |
 |---|---|---|
 | TT1 | Unit-testing an enhancer | Use `MockContext` helper. Stub `session.check_client_capability` and `session.elicit`. Don't try to mock `RequestContext` - too deep. |
-| TT2 | E2E-testing the dashboard | Out of scope this PR. See [#37](https://github.com/Miyamura80/MCP-Template/issues/37) (Sunpeak) and the future Desktest follow-up. |
+| TT2 | E2E-testing the dashboard | Out of scope this PR. See [#37](https://github.com/Miyamura80/telephone/issues/37) (Sunpeak) and the future Desktest follow-up. |
 | TT3 | Existing `tests/test_mcp_server.py` after `outputSchema` change | Registry-only assertions - no behavioral break. Add a check that enhanced tools are still listed. |
 
 ## Out of scope (intentionally)
@@ -94,6 +94,6 @@ Spec of edge cases for the MCP UI layer (enhancers, elicitation, MCP Apps, rich 
 - **Resources / Prompts** - no enhancer support; existing FastMCP primitives only
 - **Sampling** - not used by any enhancer in this PR
 - **Tasks (SEP-1686)** - long-running ops, separate work
-- **Real MCP host integration tests** - see [#37](https://github.com/Miyamura80/MCP-Template/issues/37)
+- **Real MCP host integration tests** - see [#37](https://github.com/Miyamura80/telephone/issues/37)
 - **Visual regression tests** - premature on a churning UI
 - **Hard LLM/app tool isolation via separate FastMCP servers** - visibility convention is good enough for now

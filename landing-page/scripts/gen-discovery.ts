@@ -44,8 +44,10 @@ interface Tool {
 const toolSurfacePath = join(here, "..", "src", "config", "tool-surface.generated.json");
 const parsed = JSON.parse(readFileSync(toolSurfacePath, "utf8")) as unknown;
 const tools: Tool[] = Array.isArray(parsed) ? (parsed as Tool[]) : [];
+// An empty list is valid (a server with no LLM-facing tools yet advertises
+// `tools: []`); a non-array or a malformed entry is not.
 const toolsValid =
-  tools.length > 0 &&
+  Array.isArray(parsed) &&
   tools.every((t): t is Tool => {
     if (typeof t !== "object" || t === null) return false;
     const o = t as unknown as Record<string, unknown>;
@@ -53,7 +55,7 @@ const toolsValid =
   });
 if (!toolsValid) {
   throw new Error(
-    `${toolSurfacePath} is empty or malformed; run \`make gen_tool_surface\` to regenerate it`,
+    `${toolSurfacePath} is malformed; run \`make gen_tool_surface\` to regenerate it`,
   );
 }
 

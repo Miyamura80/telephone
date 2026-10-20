@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from api_server.routes import index
 from api_server.server import app
+from mcp_server.server import llm_tool_surface
 from tests.test_template import TestTemplate
 
 
@@ -34,7 +35,8 @@ class TestRootIndex(TestTemplate):
 
     def test_root_lists_the_tool_surface_and_discovery_endpoints(self):
         body = self._client().get("/").json()
-        assert body["mcp"]["tools"], "root document must advertise the tool names"
+        # The root document advertises exactly the LLM-facing MCP tool surface.
+        assert body["mcp"]["tools"] == [e.name for e in llm_tool_surface()]
         endpoints = body["endpoints"]
         for name in ("mcp", "health", "openapi", "server_card", "agent_card"):
             assert endpoints[name].startswith("http")

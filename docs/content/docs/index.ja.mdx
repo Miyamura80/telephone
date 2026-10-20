@@ -1,58 +1,106 @@
 ---
-title: クイックスタート
-description: MCP テンプレートを始めましょう
+title: Telephone
+description: 2 つの AI エージェントが人間を介さずに双方向の会話を行えるようにする MCP 交換台。
 ---
 
-MCP Template は同じツールセットに対して3つのインターフェースを提供します:
+import { Terminal, Bot, Globe, Rocket, Ship } from 'lucide-react';
 
-- **CLI** - ターミナルでコマンドを実行
-- **MCP** - Claude などの AI アシスタントを直接接続
-- **REST API** - 認証付きで HTTP エンドポイントを呼び出し
+Telephone は交換台として機能する MCP サーバーです。2 つの MCP クライアント（たとえば
+2 つの Codex CLI インスタンス、または ChatGPT と Codex）が接続し、Telephone がその間で
+双方向の会話を中継します。人間がコピー＆ペーストで仲介する必要はありません。1 つのサーバーで
+複数の名前付き **line（回線）** を扱えるため、複数の通話を同時に進められます。
 
-ワークフローに合ったインターフェースを選択するか、3つすべてを使用できます。
+<Callout type="info" title="ステータス">
+今回のリリースはプロジェクトの名称変更と再初期化のみです。通話ツール（`dial`、`answer`、
+`say`、`listen`、`get_messages`、`hang_up`）は次のリリースで追加されるため、現時点では
+MCP のツール一覧は空です。
+[Coming next: call tools](/docs/mcp/tools#coming-next-call-tools-planned) を参照してください。
+</Callout>
 
-## インストール
+## 例: エージェント間のバグ報告
 
-import { Step, Steps } from 'fumadocs-ui/components/steps';
+**caller（発信側）** エージェントが CLI ツールを使っていてバグに遭遇します。発信側はツールを
+変更できませんが、別の場所にいる **implementer（実装側）** エージェントはそのツールの
+コードベースを持っています。人間がメッセージを取り次ぐ代わりに:
 
-<Steps>
-<Step>
+1. 発信側が回線に `dial` し、障害の内容を説明します。
+2. 実装側が `answer` で応答し、`say` で診断のための質問をします（使ったフラグ、バージョン、エラー全文など）。
+3. 発信側は自分の環境から各質問に答えます。
+4. 実装側がバグを修正し、発信側に再試行を依頼します。
+5. 発信側が修正を確認し、どちらからでも `hang_up` で通話を終了できます。
 
-### ソースからインストール
+## 仕組み
 
-```bash
-git clone https://github.com/Miyamura80/MCP-Template.git
-cd MCP-Template
-uv sync
+```text
+  caller agent                  Telephone                  implementer agent
+  (Codex CLI)                 (one server)                 (ChatGPT or Codex)
+ +-------------+           +-----------------+           +------------------+
+ |             |  MCP      |  line "bug-123" |   MCP     |                  |
+ |  say/listen |---------->|  +-----------+  |<----------| answer/say       |
+ |             |<----------|  | transcript|  |---------->|                  |
+ +-------------+  held     |  +-----------+  |  signed   +------------------+
+                  open     |  line "deploy"  |  webhook
+                  until    |  line ...       |  (MCP Events)
+                  peer     +-----------------+  wakes the
+                  speaks                        client
 ```
 
-</Step>
-<Step>
+双方とも、相手がいつ発言したかを知る必要があります。Telephone はそのために 2 つの配信方式を提供します:
 
-### インストールを確認
+- **ロングポーリング（Long-poll）**: Codex などのエージェント CLI 向け。`say` と `listen` は
+  サーバー側でツール呼び出しを保持し、相手が発言した時点で返ります。エージェントは自身のツール
+  ループの中で回線につながったままでいられます。
+- **MCP Events**: ChatGPT 向け。メッセージが届くと、サーバーが署名付きの webhook を送って
+  クライアントを起こします（ドラフト仕様）。
 
-```bash
-uv run mymcp --version
-uv run mymcp --help
-```
-
-</Step>
-<Step>
-
-### コマンドを試す
-
-```bash
-uv run mymcp greet Alice
-# Hello, Alice!
-```
-
-</Step>
-</Steps>
-
-## インターフェースを選択
+交換台の下には共有のサービスレジストリがあり、CLI（`telephone`）、MCP エンドポイント
+（`/mcp` の streamable HTTP）、認証付き REST API の 3 つの形で公開されます。
 
 <Cards>
-  <Card title="CLI" href="/docs/cli" />
-  <Card title="MCP Server" href="/docs/mcp" />
-  <Card title="REST API" href="/docs/api" />
+  <Card
+    icon={<Rocket />}
+    title="クイックスタート"
+    href="/docs/quickstart"
+    description="1 分以内に Telephone をインストールして最初のコマンドを実行します。"
+  />
 </Cards>
+
+## インターフェースを選ぶ
+
+<Cards>
+  <Card
+    icon={<Bot />}
+    title="MCP Server"
+    href="/docs/mcp"
+    description="Codex、ChatGPT、Claude などの MCP クライアントを接続します。"
+  />
+  <Card
+    icon={<Terminal />}
+    title="CLI"
+    href="/docs/cli"
+    description="telephone コマンドでターミナルからコマンドを実行します。"
+  />
+  <Card
+    icon={<Globe />}
+    title="REST API"
+    href="/docs/api"
+    description="任意のクライアントから認証付き HTTP エンドポイントを呼び出します。"
+  />
+</Cards>
+
+## デプロイ
+
+<Cards>
+  <Card
+    icon={<Ship />}
+    title="デプロイ"
+    href="/docs/deployment"
+    description="自分のインフラ上でサーバー全体を動かします。"
+  />
+</Cards>
+
+## ライセンスと料金
+
+Telephone は [MIT ライセンス](https://github.com/Miyamura80/telephone/blob/main/LICENSE) のオープンソースで、永久に無料で利用・改変・セルフホストでき、**導入費用もライセンス費用もかかりません**。サーバー全体が自分のインフラ上で動作します。
+
+マネージドホスティングとチーム向けサポートは有料プランとして任意で提供しています（ホスト型デプロイ、監視、SSO/監査ログ、SLA、商用/OEM ライセンス）。詳細は製品のランディングページにあり、エージェントが比較に使える機械可読のマニフェストを `/pricing.md` で公開しています。

@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import contextlib
 import io
+import re
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -30,12 +32,12 @@ FG_MUTED = (155, 164, 166)
 ACCENT = (195, 255, 253)  # Core Cyan 500
 
 # --- copy (keep in sync with src/config/landing.ts) -------------------------
-EYEBROW = "MCP SERVER STARTER"
-WORDMARK = "GmailMCP"
-HEADLINE = ["Give your AI agent", "real tools."]
-SUBHEAD = "One service registry, exposed identically over CLI, MCP, and HTTP."
-PILLS = ["CLI", "MCP", "HTTP"]
-REPO = "github.com/Miyamura80/MCP-Template"
+EYEBROW = "MCP SWITCHBOARD"
+WORDMARK = "Telephone"
+HEADLINE = ["Let your agents", "call each other."]
+SUBHEAD = "Two MCP clients, one line, no human relaying messages."
+PILLS = ["dial", "say", "listen", "hang_up"]
+REPO = "github.com/Miyamura80/telephone"
 
 W, H = 1200, 630
 PAD = 80
@@ -46,9 +48,29 @@ ARCHIVO_URL = (
 FONT_CACHE = Path("/tmp/Archivo-variable.ttf")
 
 
+# Fallback when the variable font is unreachable (e.g. a sandbox proxy blocks
+# raw.githubusercontent.com): Google Fonts serves one static TTF per weight.
+GF_CSS_URL = "https://fonts.googleapis.com/css2?family=Archivo:wght@{weight}"
+
+
+def _static_archivo(weight: int) -> Path:
+    path = Path(f"/tmp/Archivo-{weight}.ttf")
+    if not path.exists():
+        with urllib.request.urlopen(GF_CSS_URL.format(weight=weight)) as res:
+            css = res.read().decode()
+        match = re.search(r"url\((https://[^)]+\.ttf)\)", css)
+        if match is None:
+            raise RuntimeError(f"no TTF in Google Fonts CSS for weight {weight}")
+        urllib.request.urlretrieve(match.group(1), path)
+    return path
+
+
 def archivo(size: int, weight: int = 700) -> ImageFont.FreeTypeFont:
     if not FONT_CACHE.exists():
-        urllib.request.urlretrieve(ARCHIVO_URL, FONT_CACHE)
+        try:
+            urllib.request.urlretrieve(ARCHIVO_URL, FONT_CACHE)
+        except urllib.error.URLError:
+            return ImageFont.truetype(str(_static_archivo(weight)), size)
     font = ImageFont.truetype(str(FONT_CACHE), size)
     # Archivo axes are [Weight, Width]; pin width to 100 (normal).
     with contextlib.suppress(OSError):
@@ -121,7 +143,7 @@ def main() -> None:
     sh_font = archivo(30, 400)
     d.text((PAD, y + 24), SUBHEAD, font=sh_font, fill=FG_MUTED)
 
-    # Bottom row: transport pills (left) + repo (right).
+    # Bottom row: call-tool pills (left) + repo (right).
     pill_font = archivo(26, 600)
     px = PAD
     py = H - PAD - 44

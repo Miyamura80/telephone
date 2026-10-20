@@ -1,7 +1,7 @@
 ---
 import { hero, site } from "../config/landing";
 import CtaButtons from "./CtaButtons.astro";
-import ChatMock from "./ChatMock.astro";
+import CallMock from "./CallMock.astro";
 ---
 
 <section id="top" class="relative overflow-hidden">
@@ -39,9 +39,9 @@ import ChatMock from "./ChatMock.astro";
       <CtaButtons class="mt-9 justify-center lg:justify-start" />
     </div>
 
-    <!-- Right: chat UI mock rendering the MCP App -->
+    <!-- Right: a scripted call between two agents -->
     <div class="min-w-0 lg:pl-4">
-      <ChatMock />
+      <CallMock />
     </div>
   </div>
 </section>

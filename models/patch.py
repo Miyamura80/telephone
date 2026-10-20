@@ -5,7 +5,7 @@ stored value untouched), *null* (clear it), and *a value* (overwrite). This
 module provides the ``UNSET`` sentinel that encodes "omitted" in a way that
 survives the MCP transport, plus small helpers for consuming and serializing it.
 
-It is deliberately transport- and feature-agnostic (no Gmail imports) so any
+It is deliberately transport- and feature-agnostic (no integration imports) so any
 patch-style input model can reuse it.
 """
 

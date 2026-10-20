@@ -1,8 +1,8 @@
 """Convert connect-required service failures into SEP-1036 URL-mode elicitation.
 
 When a tool is called for a user who must first complete an external connect
-flow (the service raised a ``ConnectRequiredError`` subclass - Gmail linking
-today), the MCP layer upgrades it into the spec's URL-elicitation-required
+flow (the service raised a ``ConnectRequiredError`` subclass, e.g. a
+third-party account link), the MCP layer upgrades it into the spec's URL-elicitation-required
 error (JSON-RPC code -32042, spec 2025-11-25) whose ``data.elicitations``
 carries the flow's authorization URL. Hosts that support URL-mode elicitation
 open the consent flow natively and may retry the original call; the conversion
@@ -88,8 +88,8 @@ def reraise_with_elicitation(
                 message=exc.elicitation_message,
                 url=auth_url,
                 # Opaque + unique per server as the spec requires; the actual
-                # user binding travels inside the auth URL (e.g. Gmail's
-                # signed `state` parameter).
+                # user binding travels inside the auth URL (e.g. a signed
+                # OAuth `state` parameter).
                 elicitationId=f"connect-{secrets.token_urlsafe(8)}",
             )
         ],

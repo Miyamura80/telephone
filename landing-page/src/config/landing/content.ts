@@ -8,11 +8,7 @@ export interface Testimonial {
   quote: string;
   name: string;
   title: string;
-  /**
-   * Avatar in public/avatars/. The shipped images are AI-generated faces
-   * (not real people) so the template implies no real endorsement - swap them
-   * for your real customers' headshots. Omit to fall back to a name monogram.
-   */
+  /** Optional real headshot path under public/. Omit to fall back to a name monogram. */
   avatar?: string;
 }
 
@@ -43,40 +39,29 @@ export const agentGuide: {
   whenNotToUse: string[];
 } = {
   summary:
-    "Reach for GmailMCP when a task needs Gmail actions - reading, searching, triaging, drafting, or sending mail - on the user's behalf.",
-  // TODO: situations where an agent SHOULD call these tools.
+    "Reach for Telephone when you need to talk to another AI agent: ask it questions, hand it a problem it can solve and you cannot, and wait for its answer, with no human relaying messages.",
+  // Situations where an agent SHOULD call these tools.
   whenToUse: [
-    "The user asks to read, search, or summarize their email (e.g. \"what did Sarah send about the contract?\").",
-    "The user asks to triage or prioritize their inbox - call `gmail_curate_inbox` to rank threads by importance.",
-    "The user asks to draft, reply to, or send a message - draft first and let the user review before sending.",
-    "Another task needs a fact that lives in the user's mail (an invoice total, a confirmation number, a meeting time).",
+    "You hit a bug in a tool or library you cannot modify, and another agent has that codebase checked out - dial it and describe the failure.",
+    "Another agent dialed you and you own the code in question - answer the line, ask diagnosis questions, fix it, and say when it is shipped.",
+    "A task needs back-and-forth with a peer agent (clarifying questions, confirming a fix) rather than a single request.",
   ],
-  // TODO: situations where an agent should NOT use these tools (avoid over-triggering).
+  // Situations where an agent should NOT use these tools (avoid over-triggering).
   whenNotToUse: [
-    "The request is about a different mail provider (Outlook, Proton) - these tools are Gmail-only.",
-    "The user has not connected an account or granted access - complete the auth flow (see auth.md) first.",
-    "The task is purely local or computational and needs no access to the user's mailbox.",
+    "The user is right there and can answer the question directly - ask them instead.",
+    "You can read or change the code yourself - just do it.",
+    "The task is a single one-shot request with no reply needed; a call adds latency for nothing.",
   ],
 };
 
+/**
+ * Testimonials stay disabled until there are real users to quote. Never ship
+ * invented people here.
+ */
 export const testimonials: { enabled: boolean; heading: string; items: Testimonial[] } = {
-  enabled: true,
-  heading: "Trusted by builders",
-  items: [
-    {
-      // TODO: replace with real quotes - even one line from a first user beats nothing.
-      quote: "We had a production MCP server in front of our agents the same afternoon. The shared registry meant our CLI and API just worked too.",
-      name: "Placeholder Name",
-      title: "Staff Engineer, Placeholder Co.",
-      avatar: "/avatars/person-1.jpg",
-    },
-    {
-      quote: "The typed schemas are the killer feature. Our agent stopped guessing argument shapes overnight.",
-      name: "Placeholder Name",
-      title: "Founder, Placeholder AI",
-      avatar: "/avatars/person-2.jpg",
-    },
-  ],
+  enabled: false,
+  heading: "What builders say",
+  items: [],
 };
 
 export const pricing: { enabled: boolean; heading: string; subhead: string; tiers: PricingTier[] } = {
@@ -96,8 +81,8 @@ export const pricing: { enabled: boolean; heading: string; subhead: string; tier
       features: [
         "MIT license - fork, modify, and ship freely",
         "All three transports: CLI, MCP, HTTP API",
-        "Interactive MCP Apps (composer + ranked inbox)",
-        "Your own OAuth credentials & encrypted tokens",
+        "Unlimited named lines on your own server",
+        "API keys + OAuth 2.1 with your own identity provider",
         "Community support",
       ],
       cta: "Get the source",
@@ -111,8 +96,8 @@ export const pricing: { enabled: boolean; heading: string; subhead: string; tier
         "We run the streamable-HTTP server for you. No infrastructure to manage, paste-a-URL setup.",
       features: [
         "Managed cloud deployment (zero ops)",
-        "Hosted OAuth 2.1 & encrypted token storage",
-        "Usage analytics & monitoring",
+        "Hosted OAuth 2.1 & API keys",
+        "Call history & monitoring",
         "Priority support",
       ],
       cta: "Start free trial",
@@ -154,8 +139,8 @@ export const askAi: {
   providers: AskAiProvider[];
 } = {
   heading: "Ask AI about this",
-  subhead: "Have your assistant explain the template, compare it, or walk you through deploying it.",
-  prompt: `What is the ${site.name} MCP server template? Explain what it does, how the CLI / MCP / HTTP transports share one codebase, and how I'd deploy it. Repo: ${site.githubUrl}`,
+  subhead: "Have your assistant explain how a call works, compare it, or walk you through deploying it.",
+  prompt: `What is ${site.name}, the MCP server that lets two AI agents call each other? Explain how a caller and an implementer agent hold a conversation through it, how Codex and ChatGPT each receive replies, and how I'd deploy it. Repo: ${site.githubUrl}`,
   providers: [
     { id: "chatgpt", name: "ChatGPT", logo: "/logos/chatgpt.svg", url: "https://chatgpt.com/?q={q}" },
     { id: "perplexity", name: "Perplexity", logo: "/logos/perplexity.svg", url: "https://www.perplexity.ai/search?q={q}" },
@@ -167,56 +152,48 @@ export const faq: { heading: string; items: FaqItem[] } = {
   heading: "Frequently asked questions",
   items: [
     {
-      q: "Which MCP clients are supported?",
-      a: "Any client that speaks the Model Context Protocol: Claude Desktop, Claude Code, Cursor, Cline, VS Code, Windsurf, and more. The server exposes a standard tool/resource surface.",
+      q: "What does Telephone actually do?",
+      a: "It relays messages between two MCP clients on a named line. One agent dials, the other answers, and they take turns with say and listen until one hangs up. The server keeps the transcript, so either side (or you) can read it back with get_messages.",
     },
     {
-      q: "stdio or streamable HTTP?",
-      a: "Both. Streamable HTTP is the primary transport (mounted at /mcp alongside the HTTP API in one process), and stdio is available for local/dev use.",
+      q: "Is it ready to use today?",
+      a: "Partly. The server, auth, CLI, and HTTP API are in place; the call tools (dial, answer, say, listen, get_messages, hang_up) land in the next release. Watch the GitHub repo for it.",
+    },
+    {
+      q: "Which clients can be on a call?",
+      a: "Any MCP client that can reach a streamable-HTTP server. Codex CLI is the main target: it stays on the line with long-poll listen calls. ChatGPT is supported by waking it through MCP Events webhooks, since it cannot hold a request open.",
+    },
+    {
+      q: "Why long-polling instead of streaming?",
+      a: "Agents act in tool calls. A listen call that blocks until the peer speaks fits that loop: the agent calls listen, gets the next message as the tool result, and decides what to say. No client-side streaming support is needed.",
+    },
+    {
+      q: "Is a human needed during the call?",
+      a: "No. That is the point: the caller and the implementer talk directly. You can still read the line from the CLI or the HTTP API at any time, and either agent can hang up.",
+    },
+    {
+      q: "How is this different from A2A?",
+      a: "A2A expects each agent to run its own server endpoint. Codex CLI and ChatGPT are MCP clients and cannot host one, so Telephone puts the endpoint in the middle and lets both sides dial in as ordinary MCP clients. See /compare.",
     },
     {
       q: "How does authentication work?",
-      a: "The MCP mount supports OAuth 2.1 as a resource server, sharing auth and CORS with the HTTP API. You can also run it unauthenticated for local development.",
-    },
-    {
-      q: "Do I need to install anything to use it?",
-      a: "No. Because the server runs over streamable HTTP, connecting is just pasting its URL into your agent client. No local install, runtime, or download required. (Self-hosting the server is a separate, optional step.)",
-    },
-    {
-      q: "Does it work on mobile?",
-      a: "Yes, anywhere your agent runs. Since it's a remote HTTP server with nothing to install locally, it works in any agent app that has a mobile app, including the Claude and ChatGPT mobile apps.",
+      a: "The MCP mount is an OAuth 2.1 resource server and also accepts API keys, sharing auth and CORS with the HTTP API. You can run it unauthenticated for local development.",
     },
     {
       q: "Can I self-host?",
-      a: "Yes. The whole thing is open source and ships with a Dockerfile and Railway config. Deploy it anywhere that runs a container.",
-    },
-    {
-      q: "What about my existing CLI / API?",
-      a: "They share the same service registry. Add a tool once and it's available over CLI, MCP, and HTTP simultaneously, with no duplicated logic.",
-    },
-    {
-      q: "Is there an /ask (NLWeb) endpoint?",
-      a: "Yes. There's a public, NLWeb-conformant /ask endpoint for natural-language questions answered from the docs (server-side Q&A with SSE streaming). It's distinct from the /mcp action-tool surface, which exposes callable tools. /ask is disabled by default in the template; enable it via config (ask.enabled: true).",
-    },
-    {
-      q: "Is this just another Gmail API wrapper?",
-      a: "No. Most Gmail MCPs (like GongRzhe's) wrap the Gmail API and return JSON. GmailMCP renders interactive MCP Apps - a composer you edit drafts in and a ranked inbox you triage - directly inside the chat, and exposes the same tools over CLI and HTTP, not just MCP. See the comparison at /compare.",
-    },
-    {
-      q: "How is it different from Composio, Zapier, or Google Workspace MCP?",
-      a: "Those are broad gateways or suites where Gmail is one generic toolkit among many. GmailMCP goes deep on Gmail with an interactive in-chat inbox, and it's open source and self-hostable so your mail never routes through a proprietary service. Full breakdown at /compare.",
+      a: "Yes. It is open source and ships with Railway and Render config. Deploy it anywhere that runs a container, then give both agents the URL.",
     },
   ],
 };
 
 export const finalCta: { heading: string; subhead: string; features: string[] } = {
-  heading: "Ship your MCP server today.",
-  subhead: "Clone the template, deploy it, and point your agent at the URL.",
-  // Four flagship features, 3–4 words each, shown beside the final CTA.
+  heading: "Let your agents talk it out.",
+  subhead: "Run the switchboard, add it to both agents, and let the caller dial.",
+  // Four flagship features, 3-4 words each, shown beside the final CTA.
   features: [
-    "Three transports, one codebase",
-    "Headless or interactive tools",
-    "Streamable HTTP, one port",
+    "Agent-to-agent calls",
+    "Long-poll or webhook delivery",
+    "Many named lines",
     "Open source, self-hostable",
   ],
 };

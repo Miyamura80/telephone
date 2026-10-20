@@ -195,8 +195,8 @@ def execute_idempotent(
             raise
         # Any other failure - a 5xx HTTPException, a network drop, or an
         # unexpected exception - is *ambiguous*: the side effect may already
-        # have committed remotely (e.g. Gmail accepted the send before the
-        # connection dropped). We deliberately do NOT release the claim, so a
+        # have committed remotely (e.g. a third party accepted the request
+        # before the connection dropped). We deliberately do NOT release the claim, so a
         # same-key retry returns 409 instead of re-executing an irreversible
         # operation; the wedged row clears via the TTL sweep. The exception
         # propagates out of the ``use_db_session`` context with the claim intact.

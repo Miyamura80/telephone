@@ -1,8 +1,8 @@
-"""Run MCPJam apps + protocol conformance against the local ``/mcp`` server.
+"""Run MCPJam protocol conformance against the local ``/mcp`` server.
 
 Boots ``api_server.server:app`` on a throwaway SQLite DB, seeds an API key,
-runs ``mcpjam apps conformance`` and ``mcpjam protocol conformance`` against the
-streamable-HTTP ``/mcp`` mount, and exits non-zero if either run reports a
+runs ``mcpjam protocol conformance`` against the
+streamable-HTTP ``/mcp`` mount, and exits non-zero if the run reports a
 ``failed`` check.
 
 The MCPJam CLI exits 0 even when checks fail, so gating is done by parsing the
@@ -187,7 +187,9 @@ def main() -> int:
     blocking: list[str] = []
     try:
         _wait_ready(server)
-        for suite in ("protocol", "apps"):
+        # The apps suite returns once an MCP App ships again; no ui:// app
+        # is registered today, so only protocol conformance applies.
+        for suite in ("protocol",):
             report = _run_conformance(suite, api_key)
             blocking += _print_report(suite, report)
     finally:

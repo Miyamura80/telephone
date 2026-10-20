@@ -1,9 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "GmailMCP API",
-    "version": "0.1.0",
-    "description": "GmailMCP is a Model Context Protocol server that gives your AI agent real capabilities: one codebase exposed over CLI, MCP, and HTTP."
+    "title": "Telephone API",
+    "description": "Telephone is an MCP server that acts as a switchboard, so two AI agents (two Codex CLI sessions, or ChatGPT and Codex) can hold a two-way conversation with no human relaying messages.",
+    "version": "0.1.1"
   },
   "paths": {
     "/health": {
@@ -11,8 +11,29 @@
         "tags": [
           "health"
         ],
-        "summary": "Health Check",
+        "summary": "Liveness probe (public)",
+        "description": "Public liveness signal: this process is up and serving.\n\nRuns **no dependency probes**.  Liveness and readiness are different\nquestions and this endpoint answers only the first, for three reasons:\n\n- ``db/engine.py`` builds the engine with ``pool_pre_ping=True`` and no\n  connect timeout, so a database host that stops answering SYN blocks the\n  probe on OS TCP retries (~130s on Linux).  The Dockerfile healthcheck is\n  ``--timeout=5s --retries=3``, so probing here would turn a slow\n  dependency into a container restart loop.\n- This is a sync ``def``, so it runs on the anyio threadpool.  A probe that\n  blocks lets unauthenticated callers park every thread in that pool and\n  stall every other sync route in the app.  ``db/engine.py`` now bounds the\n  connect at ``CONNECT_TIMEOUT_SECONDS``, but a bounded probe on an\n  anonymous endpoint is still a lever an attacker can pull for free.\n- A per-component rollup readable by anonymous callers is a disclosure\n  oracle in its own right (\"one of their backends is erroring right now\").\n\nNothing consumes the rollup: Railway ``healthcheckPath``, Render\n``healthCheckPath`` and the Dockerfile ``HEALTHCHECK`` all assert on the\nstatus code alone.  Readiness lives on ``/health/detail``.",
         "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/detail": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Detailed health (authenticated)",
+        "description": "Full health payload - build identity plus per-component status.\n\nAuthenticated-only: the git commit identifies the exact deployed revision\nof an open-source codebase, which is exactly the disclosure ASVS V14.3.3\nwarns about.\n\nThis is a sync ``def`` and it does probe, so the threadpool argument in\n``health_check`` applies here too - authentication changes who can pull the\nlever, not that it exists.  What bounds it is ``db/engine.py``'s\n``CONNECT_TIMEOUT_SECONDS``: the Redis client already carries its own\nsocket timeouts and the Stripe probe makes no network call, so with the\ndatabase connect bounded, no probe here can hold a worker indefinitely.",
+        "operationId": "health_detail_health_detail_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -31,8 +52,68 @@
           "well-known"
         ],
         "summary": "Mcp Server Card",
-        "description": "SEP-2127 Server Card - pre-connect registry/client branding.\n\nNo ``$schema`` is emitted: the draft SEP-2127 server-card schema is not yet\npublished (the URL 404s), so advertising it would only break validators.",
+        "description": "SEP-2127 Server Card - pre-connect registry/client discovery.\n\nLets agents preview the server before opening a transport: identity\n(``name``/``title``/``description``/``version``/``icons``), where to connect\n(``serverUrl`` + ``remotes``), and the tool surface (``tools[]``).\n\nNo ``$schema`` is emitted: the draft SEP-2127 server-card schema is not yet\npublished (the URL 404s), so advertising it would only break validators.",
         "operationId": "mcp_server_card__well_known_mcp_server_card_json_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/.well-known/agent-card.json": {
+      "get": {
+        "tags": [
+          "well-known"
+        ],
+        "summary": "A2A Agent Card",
+        "description": "A2A Agent Card (spec v0.3.0) - pre-connect agent discovery document.\n\nDiscovery/branding only: it advertises this agent's identity and skills so\nA2A registries/clients can find it. We intentionally do not declare a\n``preferredTransport`` because the template implements no A2A wire transport;\nadvertising one would point clients at an endpoint that can't speak it.",
+        "operationId": "a2a_agent_card__well_known_agent_card_json_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/.well-known/api-catalog": {
+      "get": {
+        "tags": [
+          "well-known"
+        ],
+        "summary": "Api Catalog",
+        "description": "RFC 9727 API catalog - points agents/crawlers at the OpenAPI description.\n\nReturns an RFC 9264 linkset whose ``service-desc`` link references this\nserver's OpenAPI document, so function-calling agents can discover the\nmachine-readable API contract from one well-known URL. Absolute URLs are\nemitted when ``API_PUBLIC_URL`` is configured (matching the OpenAPI\n``servers`` block); otherwise relative hrefs let the client resolve them\nagainst the request origin.",
+        "operationId": "api_catalog__well_known_api_catalog_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/.well-known/http-message-signatures-directory": {
+      "get": {
+        "tags": [
+          "well-known"
+        ],
+        "summary": "Web Bot Auth Directory",
+        "description": "Web Bot Auth key directory - the agent's Ed25519 public signing keys.\n\nPublic discovery: any origin verifying this agent's HTTP Message Signatures\nreads it cross-origin, so it is served with ``Access-Control-Allow-Origin:\n*`` and the directory-specific JWKS media type.",
+        "operationId": "web_bot_auth_directory__well_known_http_message_signatures_directory_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -91,123 +172,38 @@
         }
       }
     },
-    "/api/v1/services/gmail_connect": {
-      "post": {
+    "/.well-known/oauth-authorization-server/mcp": {
+      "get": {
         "tags": [
-          "services"
+          "well-known"
         ],
-        "summary": "Begin the Google OAuth flow to link a Gmail account",
-        "operationId": "svc_gmail_connect_api_v1_services_gmail_connect_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GmailConnectInput"
-              }
-            }
-          },
-          "required": true
-        },
+        "summary": "Authorization Server Metadata For Mcp",
+        "operationId": "authorization_server_metadata_for_mcp__well_known_oauth_authorization_server_mcp_get",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GmailConnectResult"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
+                "schema": {}
               }
             }
           }
         }
       }
     },
-    "/api/v1/services/gmail_status": {
-      "post": {
+    "/.well-known/oauth-authorization-server": {
+      "get": {
         "tags": [
-          "services"
+          "well-known"
         ],
-        "summary": "Return whether the user has a linked Gmail account",
-        "operationId": "svc_gmail_status_api_v1_services_gmail_status_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GmailStatusInput"
-              }
-            }
-          },
-          "required": true
-        },
+        "summary": "Authorization Server Metadata Root",
+        "operationId": "authorization_server_metadata_root__well_known_oauth_authorization_server_get",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GmailStatusResult"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/services/gmail_disconnect": {
-      "post": {
-        "tags": [
-          "services"
-        ],
-        "summary": "Revoke and remove the user's linked Gmail account",
-        "operationId": "svc_gmail_disconnect_api_v1_services_gmail_disconnect_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GmailDisconnectInput"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GmailDisconnectResult"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
+                "schema": {}
               }
             }
           }
@@ -219,7 +215,7 @@
         "tags": [
           "services"
         ],
-        "summary": "Show the full project configuration",
+        "summary": "Show the project's YAML-layer configuration (secrets and env-var overrides excluded)",
         "operationId": "svc_config_show_api_v1_services_config_show_post",
         "requestBody": {
           "content": {
@@ -260,7 +256,7 @@
         "tags": [
           "services"
         ],
-        "summary": "Get a single configuration value by dot-separated key",
+        "summary": "Get a YAML-layer config value by dot-separated key (secrets and env-var overrides excluded; keys set only via env or code defaults are absent)",
         "operationId": "svc_config_get_api_v1_services_config_get_post",
         "requestBody": {
           "content": {
@@ -378,18 +374,18 @@
         }
       }
     },
-    "/api/v1/services/gmail_list_drafts": {
+    "/api/v1/services/doctor_fix": {
       "post": {
         "tags": [
           "services"
         ],
-        "summary": "List the user's Gmail drafts",
-        "operationId": "svc_gmail_list_drafts_api_v1_services_gmail_list_drafts_post",
+        "summary": "Run health checks and attempt to auto-fix fixable issues",
+        "operationId": "svc_doctor_fix_api_v1_services_doctor_fix_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/GmailListDraftsInput"
+                "$ref": "#/components/schemas/DoctorFixInput"
               }
             }
           },
@@ -401,540 +397,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GmailListDraftsResult"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/services/gmail_get_draft": {
-      "post": {
-        "tags": [
-          "services"
-        ],
-        "summary": "Fetch a single Gmail draft by id",
-        "operationId": "svc_gmail_get_draft_api_v1_services_gmail_get_draft_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GmailGetDraftInput"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GmailDraft"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/services/gmail_update_draft": {
-      "post": {
-        "tags": [
-          "services"
-        ],
-        "summary": "Patch fields on an existing Gmail draft and open an interactive composer UI. ALWAYS call this tool to write or edit draft content - NEVER compose email text as plain chat text. The tool renders an interactive composer where the user can review, edit, and send. Pass your composed text in the 'body' parameter. Keep your chat response to one brief sentence since the user can edit in the UI.",
-        "operationId": "svc_gmail_update_draft_api_v1_services_gmail_update_draft_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GmailUpdateDraftInput"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GmailDraft"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/services/gmail_compose": {
-      "post": {
-        "tags": [
-          "services"
-        ],
-        "summary": "Create a new Gmail draft from the given fields. ALWAYS use this tool instead of composing email text in chat - it creates a real Gmail draft and opens an interactive composer UI where the user can review, edit, and send. When an interactive UI is rendered alongside the result, keep your text response brief since the user can edit in the UI.",
-        "operationId": "svc_gmail_compose_api_v1_services_gmail_compose_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GmailComposeInput"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GmailDraft"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/services/gmail_send": {
-      "post": {
-        "tags": [
-          "services"
-        ],
-        "summary": "Send a previously-composed Gmail draft",
-        "operationId": "svc_gmail_send_api_v1_services_gmail_send_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GmailSendInput"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GmailSendResult"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/services/gmail_discard_draft": {
-      "post": {
-        "tags": [
-          "services"
-        ],
-        "summary": "Delete a Gmail draft by id",
-        "operationId": "svc_gmail_discard_draft_api_v1_services_gmail_discard_draft_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GmailDiscardDraftInput"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GmailDiscardDraftResult"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/services/gmail_reply_to_thread": {
-      "post": {
-        "tags": [
-          "services"
-        ],
-        "summary": "Create a reply draft on an existing Gmail thread. ALWAYS use this tool instead of composing reply text in chat - it creates a real Gmail draft and opens an interactive composer UI where the user can review, edit, and send. Pass your drafted reply in the 'body' parameter. When an interactive UI is rendered alongside the result, keep your text response brief since the user can edit in the UI.",
-        "operationId": "svc_gmail_reply_to_thread_api_v1_services_gmail_reply_to_thread_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GmailReplyInput"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GmailDraft"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/services/gmail_list_inbox": {
-      "post": {
-        "tags": [
-          "services"
-        ],
-        "summary": "List recent inbox messages, optionally filtered by a Gmail search query. When the user asks to find or open a specific email, ALWAYS follow up by calling gmail_get_thread with the thread_id to render the full conversation in an interactive UI.",
-        "operationId": "svc_gmail_list_inbox_api_v1_services_gmail_list_inbox_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GmailListInboxInput"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GmailListInboxResult"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/services/gmail_get_thread": {
-      "post": {
-        "tags": [
-          "services"
-        ],
-        "summary": "Fetch a Gmail thread by id with full message bodies + attachments. When an interactive UI is rendered alongside the result, keep your text response brief since the user can browse the conversation in the UI.",
-        "operationId": "svc_gmail_get_thread_api_v1_services_gmail_get_thread_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GmailGetThreadInput"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GmailThread"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/services/gmail_curate_inbox": {
-      "post": {
-        "tags": [
-          "services"
-        ],
-        "summary": "Rank recent inbox threads by a deterministic importance score. When an interactive UI is rendered alongside the result, keep your text response brief (a one-line summary) since the user can browse details in the UI. Only elaborate if the user asks.",
-        "operationId": "svc_gmail_curate_inbox_api_v1_services_gmail_curate_inbox_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GmailCurateInboxInput"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GmailCurateInboxResult"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/services/gmail_mark_thread_read": {
-      "post": {
-        "tags": [
-          "services"
-        ],
-        "summary": "Mark a Gmail thread as read by removing the UNREAD label",
-        "operationId": "svc_gmail_mark_thread_read_api_v1_services_gmail_mark_thread_read_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GmailThreadModifyInput"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GmailMarkReadResult"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/services/gmail_archive_thread": {
-      "post": {
-        "tags": [
-          "services"
-        ],
-        "summary": "Archive a Gmail thread by removing the INBOX label",
-        "operationId": "svc_gmail_archive_thread_api_v1_services_gmail_archive_thread_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GmailThreadModifyInput"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GmailArchiveResult"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/services/gmail_mark_thread_done": {
-      "post": {
-        "tags": [
-          "services"
-        ],
-        "summary": "Mark a Gmail thread as done by applying the MCP/Done label (hides from curated inbox)",
-        "operationId": "svc_gmail_mark_thread_done_api_v1_services_gmail_mark_thread_done_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GmailThreadModifyInput"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GmailMarkDoneResult"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/services/gmail_unmark_thread_done": {
-      "post": {
-        "tags": [
-          "services"
-        ],
-        "summary": "Remove the MCP/Done label from a thread (undo mark-done)",
-        "operationId": "svc_gmail_unmark_thread_done_api_v1_services_gmail_unmark_thread_done_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GmailThreadModifyInput"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GmailUnmarkDoneResult"
+                  "$ref": "#/components/schemas/DoctorResult"
                 }
               }
             }
@@ -993,6 +456,46 @@
         }
       }
     },
+    "/api/v1/stream/doctor": {
+      "post": {
+        "tags": [
+          "streaming"
+        ],
+        "summary": "Stream project health checks as they complete",
+        "description": "Run the doctor checks, emitting each result over SSE as it finishes.\n\nMirrors the auth + quota gating of ``POST /api/v1/services/doctor``: one\ndaily-limit slot is claimed per stream. ``sse-starlette`` iterates the\nsync generator in a threadpool, so the blocking subprocess checks never\nstall the event loop.",
+        "operationId": "stream_doctor_api_v1_stream_doctor_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DoctorStreamInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/me": {
       "get": {
         "tags": [
@@ -1013,6 +516,45 @@
       }
     },
     "/api/v1/auth/api-keys": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Create Key",
+        "operationId": "create_key_api_v1_auth_api_keys_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAPIKeyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateAPIKeyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "get": {
         "tags": [
           "auth"
@@ -1075,45 +617,6 @@
             }
           }
         }
-      },
-      "post": {
-        "tags": [
-          "auth"
-        ],
-        "summary": "Create Key",
-        "operationId": "create_key_api_v1_auth_api_keys_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateAPIKeyRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CreateAPIKeyResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
       }
     },
     "/api/v1/auth/api-keys/{key_id}": {
@@ -1131,106 +634,6 @@
             "schema": {
               "type": "integer",
               "title": "Key Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/auth/google/start": {
-      "get": {
-        "tags": [
-          "google-oauth"
-        ],
-        "summary": "Start",
-        "description": "Kick off the OAuth flow: redirect the user to Google's consent screen.",
-        "operationId": "start_api_v1_auth_google_start_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/auth/google/callback": {
-      "get": {
-        "tags": [
-          "google-oauth"
-        ],
-        "summary": "Callback",
-        "description": "Exchange the authorization code for tokens and persist the refresh token.",
-        "operationId": "callback_api_v1_auth_google_callback_get",
-        "parameters": [
-          {
-            "name": "code",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Code"
-            }
-          },
-          {
-            "name": "state",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "State"
-            }
-          },
-          {
-            "name": "error",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Error"
             }
           }
         ],
@@ -1487,6 +890,176 @@
           }
         }
       }
+    },
+    "/ask": {
+      "post": {
+        "tags": [
+          "ask"
+        ],
+        "summary": "Ask Post",
+        "operationId": "ask_post_ask_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Ask Post Ask Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "ask"
+        ],
+        "summary": "Ask Get",
+        "operationId": "ask_get_ask_get",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Query"
+            }
+          },
+          {
+            "name": "streaming",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Streaming"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "list",
+                "summarize",
+                "generate"
+              ],
+              "type": "string",
+              "default": "generate",
+              "title": "Mode"
+            }
+          },
+          {
+            "name": "query_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query Id"
+            }
+          },
+          {
+            "name": "prev",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Prev"
+            }
+          },
+          {
+            "name": "site",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Site"
+            }
+          },
+          {
+            "name": "decontextualized_query",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Decontextualized Query"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Ask Get Ask Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1563,39 +1136,74 @@
         ],
         "title": "APIKeyInfo"
       },
-      "AttachmentInput": {
+      "AskInput": {
         "properties": {
-          "filename": {
+          "query": {
             "type": "string",
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Filename",
-            "description": "Display name for the attachment, e.g. 'report.pdf'"
+            "title": "Query"
           },
-          "mime_type": {
-            "type": "string",
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9!#$&\\-^_.+]*\\/[a-zA-Z0-9][a-zA-Z0-9!#$&\\-^_.+]*$",
-            "title": "Mime Type",
-            "description": "MIME type, e.g. 'application/pdf'"
+          "streaming": {
+            "type": "boolean",
+            "title": "Streaming",
+            "default": true
           },
-          "data_base64": {
+          "mode": {
             "type": "string",
-            "maxLength": 34000000,
-            "minLength": 1,
-            "title": "Data Base64",
-            "description": "Base64-encoded file content"
+            "enum": [
+              "list",
+              "summarize",
+              "generate"
+            ],
+            "title": "Mode",
+            "default": "generate"
+          },
+          "query_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Id"
+          },
+          "prev": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Prev"
+          },
+          "site": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site"
+          },
+          "decontextualized_query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decontextualized Query"
           }
         },
         "type": "object",
         "required": [
-          "filename",
-          "mime_type",
-          "data_base64"
+          "query"
         ],
-        "title": "AttachmentInput",
-        "description": "A file attachment to include on an outgoing email.\n\nPass ``data_base64`` with the file content base64-encoded. Works from any\nMCP host (ChatGPT, Claude, etc.) regardless of filesystem access."
+        "title": "AskInput",
+        "description": "A natural-language question plus NLWeb conversation context."
       },
       "CheckResultModel": {
         "properties": {
@@ -1815,16 +1423,53 @@
         ],
         "title": "CreateAPIKeyResponse"
       },
-      "DoctorInput": {
+      "CursorPage_APIKeyInfo_": {
         "properties": {
-          "fix": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/APIKeyInfo"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "The items on this page."
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor",
+            "description": "Opaque cursor for the next page. Pass it back as `cursor`. `null` when there are no more items."
+          },
+          "has_more": {
             "type": "boolean",
-            "title": "Fix",
+            "title": "Has More",
+            "description": "True when another page is available via `next_cursor`.",
             "default": false
           }
         },
         "type": "object",
-        "title": "DoctorInput"
+        "required": [
+          "items"
+        ],
+        "title": "CursorPage[APIKeyInfo]"
+      },
+      "DoctorFixInput": {
+        "properties": {},
+        "type": "object",
+        "title": "DoctorFixInput",
+        "description": "Input for ``doctor_fix`` - no options: it always attempts fixes."
+      },
+      "DoctorInput": {
+        "properties": {},
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DoctorInput",
+        "description": "Input for the pure ``doctor`` service (checks only, no side effects).\n\n``extra=\"forbid\"`` so legacy REST payloads like ``{\"fix\": true}`` fail\nloudly with a 422 instead of silently running checks-only: the fixer path\nmoved to the separate ``doctor_fix`` service (``mutating=True``)."
       },
       "DoctorResult": {
         "properties": {
@@ -1847,1228 +1492,18 @@
         ],
         "title": "DoctorResult"
       },
-      "GmailArchiveResult": {
+      "DoctorStreamInput": {
         "properties": {
-          "archived": {
+          "fix": {
             "type": "boolean",
-            "title": "Archived"
-          }
-        },
-        "type": "object",
-        "required": [
-          "archived"
-        ],
-        "title": "GmailArchiveResult"
-      },
-      "GmailAttachment": {
-        "properties": {
-          "filename": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Filename"
-          },
-          "mime_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mime Type"
-          },
-          "size": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Size"
-          },
-          "attachment_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Attachment Id"
-          },
-          "content_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Content Id"
-          },
-          "data": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Data"
-          }
-        },
-        "type": "object",
-        "title": "GmailAttachment"
-      },
-      "GmailComposeInput": {
-        "properties": {
-          "user_id": {
-            "type": "string",
-            "title": "User Id",
-            "default": ""
-          },
-          "to": {
-            "type": "string",
-            "title": "To"
-          },
-          "subject": {
-            "type": "string",
-            "title": "Subject"
-          },
-          "body": {
-            "type": "string",
-            "title": "Body"
-          },
-          "cc": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cc"
-          },
-          "bcc": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bcc"
-          },
-          "in_reply_to_thread_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "In Reply To Thread Id"
-          },
-          "attachments": {
-            "items": {
-              "$ref": "#/components/schemas/AttachmentInput"
-            },
-            "type": "array",
-            "title": "Attachments"
-          }
-        },
-        "type": "object",
-        "required": [
-          "to",
-          "subject",
-          "body"
-        ],
-        "title": "GmailComposeInput"
-      },
-      "GmailConnectInput": {
-        "properties": {
-          "user_id": {
-            "type": "string",
-            "title": "User Id",
-            "description": "The MCP user id starting the flow",
-            "default": ""
-          }
-        },
-        "type": "object",
-        "title": "GmailConnectInput"
-      },
-      "GmailConnectResult": {
-        "properties": {
-          "auth_url": {
-            "type": "string",
-            "title": "Auth Url"
-          },
-          "state": {
-            "type": "string",
-            "title": "State"
-          }
-        },
-        "type": "object",
-        "required": [
-          "auth_url",
-          "state"
-        ],
-        "title": "GmailConnectResult"
-      },
-      "GmailCurateInboxInput": {
-        "properties": {
-          "user_id": {
-            "type": "string",
-            "title": "User Id",
-            "default": ""
-          },
-          "query": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Query"
-          },
-          "limit": {
-            "type": "integer",
-            "maximum": 100,
-            "minimum": 1,
-            "title": "Limit",
-            "default": 10
-          }
-        },
-        "type": "object",
-        "title": "GmailCurateInboxInput"
-      },
-      "GmailCurateInboxResult": {
-        "properties": {
-          "threads": {
-            "items": {
-              "$ref": "#/components/schemas/GmailCuratedThread"
-            },
-            "type": "array",
-            "title": "Threads"
-          }
-        },
-        "type": "object",
-        "required": [
-          "threads"
-        ],
-        "title": "GmailCurateInboxResult"
-      },
-      "GmailCuratedThread": {
-        "properties": {
-          "thread_id": {
-            "type": "string",
-            "title": "Thread Id"
-          },
-          "subject": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Subject"
-          },
-          "from": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "From"
-          },
-          "snippet": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Snippet"
-          },
-          "last_message_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Message At"
-          },
-          "importance_score": {
-            "type": "number",
-            "title": "Importance Score"
-          },
-          "reasons": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Reasons"
-          },
-          "labels": {
-            "items": {
-              "$ref": "#/components/schemas/GmailLabelChip"
-            },
-            "type": "array",
-            "title": "Labels"
-          },
-          "has_draft": {
-            "type": "boolean",
-            "title": "Has Draft",
+            "title": "Fix",
             "default": false
-          },
-          "draft_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Draft Id"
           }
         },
+        "additionalProperties": false,
         "type": "object",
-        "required": [
-          "thread_id",
-          "importance_score"
-        ],
-        "title": "GmailCuratedThread"
-      },
-      "GmailDiscardDraftInput": {
-        "properties": {
-          "user_id": {
-            "type": "string",
-            "title": "User Id",
-            "default": ""
-          },
-          "draft_id": {
-            "type": "string",
-            "title": "Draft Id"
-          }
-        },
-        "type": "object",
-        "required": [
-          "draft_id"
-        ],
-        "title": "GmailDiscardDraftInput"
-      },
-      "GmailDiscardDraftResult": {
-        "properties": {
-          "discarded": {
-            "type": "boolean",
-            "title": "Discarded"
-          }
-        },
-        "type": "object",
-        "required": [
-          "discarded"
-        ],
-        "title": "GmailDiscardDraftResult"
-      },
-      "GmailDisconnectInput": {
-        "properties": {
-          "user_id": {
-            "type": "string",
-            "title": "User Id",
-            "default": ""
-          }
-        },
-        "type": "object",
-        "title": "GmailDisconnectInput"
-      },
-      "GmailDisconnectResult": {
-        "properties": {
-          "revoked": {
-            "type": "boolean",
-            "title": "Revoked"
-          }
-        },
-        "type": "object",
-        "required": [
-          "revoked"
-        ],
-        "title": "GmailDisconnectResult"
-      },
-      "GmailDraft": {
-        "properties": {
-          "draft_id": {
-            "type": "string",
-            "title": "Draft Id"
-          },
-          "to": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "To"
-          },
-          "cc": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cc"
-          },
-          "bcc": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bcc"
-          },
-          "subject": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Subject"
-          },
-          "body": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Body"
-          },
-          "thread_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Thread Id"
-          },
-          "attachments": {
-            "items": {
-              "$ref": "#/components/schemas/GmailDraftAttachment"
-            },
-            "type": "array",
-            "title": "Attachments"
-          }
-        },
-        "type": "object",
-        "required": [
-          "draft_id"
-        ],
-        "title": "GmailDraft"
-      },
-      "GmailDraftAttachment": {
-        "properties": {
-          "filename": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Filename"
-          },
-          "mime_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mime Type"
-          },
-          "size": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Size"
-          },
-          "attachment_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Attachment Id"
-          },
-          "message_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Message Id"
-          }
-        },
-        "type": "object",
-        "title": "GmailDraftAttachment",
-        "description": "Metadata for an attachment already on a draft (read-only, no data blob)."
-      },
-      "GmailDraftSummary": {
-        "properties": {
-          "draft_id": {
-            "type": "string",
-            "title": "Draft Id"
-          },
-          "to": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "To"
-          },
-          "subject": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Subject"
-          },
-          "snippet": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Snippet"
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "draft_id"
-        ],
-        "title": "GmailDraftSummary"
-      },
-      "GmailGetDraftInput": {
-        "properties": {
-          "user_id": {
-            "type": "string",
-            "title": "User Id",
-            "default": ""
-          },
-          "draft_id": {
-            "type": "string",
-            "title": "Draft Id"
-          }
-        },
-        "type": "object",
-        "required": [
-          "draft_id"
-        ],
-        "title": "GmailGetDraftInput"
-      },
-      "GmailGetThreadInput": {
-        "properties": {
-          "user_id": {
-            "type": "string",
-            "title": "User Id",
-            "default": ""
-          },
-          "thread_id": {
-            "type": "string",
-            "title": "Thread Id"
-          }
-        },
-        "type": "object",
-        "required": [
-          "thread_id"
-        ],
-        "title": "GmailGetThreadInput"
-      },
-      "GmailLabelChip": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "bg_color": {
-            "type": "string",
-            "title": "Bg Color",
-            "default": "#f1f3f4"
-          },
-          "text_color": {
-            "type": "string",
-            "title": "Text Color",
-            "default": "#444444"
-          }
-        },
-        "type": "object",
-        "required": [
-          "name"
-        ],
-        "title": "GmailLabelChip"
-      },
-      "GmailListDraftsInput": {
-        "properties": {
-          "user_id": {
-            "type": "string",
-            "title": "User Id",
-            "default": ""
-          },
-          "limit": {
-            "type": "integer",
-            "maximum": 500,
-            "minimum": 1,
-            "title": "Limit",
-            "default": 20
-          }
-        },
-        "type": "object",
-        "title": "GmailListDraftsInput"
-      },
-      "GmailListDraftsResult": {
-        "properties": {
-          "drafts": {
-            "items": {
-              "$ref": "#/components/schemas/GmailDraftSummary"
-            },
-            "type": "array",
-            "title": "Drafts"
-          }
-        },
-        "type": "object",
-        "required": [
-          "drafts"
-        ],
-        "title": "GmailListDraftsResult"
-      },
-      "GmailListInboxInput": {
-        "properties": {
-          "user_id": {
-            "type": "string",
-            "title": "User Id",
-            "default": ""
-          },
-          "query": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Query"
-          },
-          "limit": {
-            "type": "integer",
-            "maximum": 500,
-            "minimum": 1,
-            "title": "Limit",
-            "default": 25
-          }
-        },
-        "type": "object",
-        "title": "GmailListInboxInput"
-      },
-      "GmailListInboxResult": {
-        "properties": {
-          "messages": {
-            "items": {
-              "$ref": "#/components/schemas/GmailMessageSummary"
-            },
-            "type": "array",
-            "title": "Messages"
-          }
-        },
-        "type": "object",
-        "required": [
-          "messages"
-        ],
-        "title": "GmailListInboxResult"
-      },
-      "GmailMarkDoneResult": {
-        "properties": {
-          "marked_done": {
-            "type": "boolean",
-            "title": "Marked Done"
-          },
-          "label_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Label Id"
-          }
-        },
-        "type": "object",
-        "required": [
-          "marked_done"
-        ],
-        "title": "GmailMarkDoneResult"
-      },
-      "GmailMarkReadResult": {
-        "properties": {
-          "marked_read": {
-            "type": "boolean",
-            "title": "Marked Read"
-          }
-        },
-        "type": "object",
-        "required": [
-          "marked_read"
-        ],
-        "title": "GmailMarkReadResult"
-      },
-      "GmailMessageSummary": {
-        "properties": {
-          "message_id": {
-            "type": "string",
-            "title": "Message Id"
-          },
-          "thread_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Thread Id"
-          },
-          "subject": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Subject"
-          },
-          "from": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "From"
-          },
-          "snippet": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Snippet"
-          },
-          "date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Date"
-          }
-        },
-        "type": "object",
-        "required": [
-          "message_id"
-        ],
-        "title": "GmailMessageSummary"
-      },
-      "GmailReplyInput": {
-        "properties": {
-          "user_id": {
-            "type": "string",
-            "title": "User Id",
-            "default": ""
-          },
-          "thread_id": {
-            "type": "string",
-            "title": "Thread Id"
-          },
-          "body": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Body"
-          },
-          "subject": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Subject"
-          },
-          "attachments": {
-            "items": {
-              "$ref": "#/components/schemas/AttachmentInput"
-            },
-            "type": "array",
-            "title": "Attachments"
-          }
-        },
-        "type": "object",
-        "required": [
-          "thread_id"
-        ],
-        "title": "GmailReplyInput",
-        "description": "Input for ``gmail_reply_to_thread``: create a reply draft on a thread.\n\n``body`` defaults to an empty placeholder so the composer UI can populate\nit on the next turn. ``subject`` defaults to ``Re: <orig>`` derived from\nthe thread's last message."
-      },
-      "GmailSendInput": {
-        "properties": {
-          "user_id": {
-            "type": "string",
-            "title": "User Id",
-            "default": ""
-          },
-          "draft_id": {
-            "type": "string",
-            "title": "Draft Id"
-          }
-        },
-        "type": "object",
-        "required": [
-          "draft_id"
-        ],
-        "title": "GmailSendInput"
-      },
-      "GmailSendResult": {
-        "properties": {
-          "message_id": {
-            "type": "string",
-            "title": "Message Id"
-          },
-          "thread_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Thread Id"
-          },
-          "sent_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Sent At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "message_id",
-          "sent_at"
-        ],
-        "title": "GmailSendResult"
-      },
-      "GmailStatusInput": {
-        "properties": {
-          "user_id": {
-            "type": "string",
-            "title": "User Id",
-            "default": ""
-          }
-        },
-        "type": "object",
-        "title": "GmailStatusInput"
-      },
-      "GmailStatusResult": {
-        "properties": {
-          "connected": {
-            "type": "boolean",
-            "title": "Connected"
-          },
-          "email": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Email"
-          },
-          "scopes": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Scopes"
-          },
-          "granted_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Granted At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "connected"
-        ],
-        "title": "GmailStatusResult"
-      },
-      "GmailThread": {
-        "properties": {
-          "thread_id": {
-            "type": "string",
-            "title": "Thread Id"
-          },
-          "messages": {
-            "items": {
-              "$ref": "#/components/schemas/GmailThreadMessage"
-            },
-            "type": "array",
-            "title": "Messages"
-          },
-          "draft": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/GmailDraft"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "type": "object",
-        "required": [
-          "thread_id",
-          "messages"
-        ],
-        "title": "GmailThread"
-      },
-      "GmailThreadMessage": {
-        "properties": {
-          "message_id": {
-            "type": "string",
-            "title": "Message Id"
-          },
-          "from": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "From"
-          },
-          "to": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "To"
-          },
-          "cc": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cc"
-          },
-          "date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Date"
-          },
-          "subject": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Subject"
-          },
-          "body_text": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Body Text"
-          },
-          "body_html": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Body Html"
-          },
-          "attachments": {
-            "items": {
-              "$ref": "#/components/schemas/GmailAttachment"
-            },
-            "type": "array",
-            "title": "Attachments"
-          }
-        },
-        "type": "object",
-        "required": [
-          "message_id"
-        ],
-        "title": "GmailThreadMessage"
-      },
-      "GmailThreadModifyInput": {
-        "properties": {
-          "user_id": {
-            "type": "string",
-            "title": "User Id",
-            "default": ""
-          },
-          "thread_id": {
-            "type": "string",
-            "title": "Thread Id"
-          }
-        },
-        "type": "object",
-        "required": [
-          "thread_id"
-        ],
-        "title": "GmailThreadModifyInput"
-      },
-      "GmailUnmarkDoneResult": {
-        "properties": {
-          "unmarked_done": {
-            "type": "boolean",
-            "title": "Unmarked Done"
-          }
-        },
-        "type": "object",
-        "required": [
-          "unmarked_done"
-        ],
-        "title": "GmailUnmarkDoneResult"
-      },
-      "GmailUpdateDraftInput": {
-        "properties": {
-          "user_id": {
-            "type": "string",
-            "title": "User Id",
-            "default": ""
-          },
-          "draft_id": {
-            "type": "string",
-            "title": "Draft Id"
-          },
-          "to": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "To"
-          },
-          "subject": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Subject"
-          },
-          "body": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Body"
-          },
-          "cc": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cc"
-          },
-          "bcc": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bcc"
-          },
-          "attachments": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/AttachmentInput"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Attachments"
-          }
-        },
-        "type": "object",
-        "required": [
-          "draft_id"
-        ],
-        "title": "GmailUpdateDraftInput"
+        "title": "DoctorStreamInput",
+        "description": "Input for the SSE streaming variant, which may also apply fixers."
       },
       "GreetInput": {
         "properties": {
@@ -3234,48 +1669,13 @@
           "type"
         ],
         "title": "ValidationError"
-      },
-      "CursorPage_APIKeyInfo_": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/APIKeyInfo"
-            },
-            "type": "array",
-            "title": "Items",
-            "description": "The items on this page."
-          },
-          "next_cursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Next Cursor",
-            "description": "Opaque cursor for the next page. Pass it back as `cursor`. `null` when there are no more items."
-          },
-          "has_more": {
-            "type": "boolean",
-            "title": "Has More",
-            "description": "True when another page is available via `next_cursor`.",
-            "default": false
-          }
-        },
-        "type": "object",
-        "required": [
-          "items"
-        ],
-        "title": "CursorPage[APIKeyInfo]"
       }
     }
   },
   "servers": [
     {
-      "url": "https://api.gmailmcp.com",
-      "description": "GmailMCP production API"
+      "url": "https://api.telephone.example.com",
+      "description": "Telephone production API"
     }
   ]
 }

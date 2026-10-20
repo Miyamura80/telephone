@@ -1,15 +1,17 @@
 ---
 title: Quick Start
-description: Install MCP Template and run your first command
+description: Install Telephone and run your first command
 ---
 
-MCP Template gives you three ways to interact with the same set of tools:
+Telephone gives you three ways to interact with the same set of services:
 
 - **CLI** - Run commands in your terminal
-- **MCP** - Connect AI assistants like Claude directly
+- **MCP** - Connect agents like Codex, ChatGPT, or Claude directly
 - **REST API** - Call endpoints over HTTP with authentication
 
-Pick the interface that fits your workflow, or use all three.
+The call tools that let two agents talk (`dial`, `say`, `listen`, ...) land in
+the next release; today you can install the server and exercise the shared
+infrastructure with the example `greet` command.
 
 ## Installation
 
@@ -21,8 +23,8 @@ import { Step, Steps } from 'fumadocs-ui/components/steps';
 ### Install from source
 
 ```bash
-git clone https://github.com/Miyamura80/MCP-Template.git
-cd MCP-Template
+git clone https://github.com/Miyamura80/telephone.git
+cd telephone
 uv sync
 ```
 
@@ -32,8 +34,8 @@ uv sync
 ### Verify the installation
 
 ```bash
-uv run mymcp --version
-uv run mymcp --help
+uv run telephone --version
+uv run telephone --help
 ```
 
 </Step>
@@ -42,7 +44,7 @@ uv run mymcp --help
 ### Try a command
 
 ```bash
-uv run mymcp greet Alice
+uv run telephone greet Alice
 # Hello, Alice!
 ```
 

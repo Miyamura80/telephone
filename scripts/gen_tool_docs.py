@@ -62,82 +62,7 @@ class Group:
 # Editorial grouping. Order here is the order on the page. Every tool in the
 # surface must appear exactly once; `_check_grouping` raises if one is missing or
 # listed twice, so adding a @service fails loudly here rather than vanishing.
-GROUPS: tuple[Group, ...] = (
-    Group(
-        heading="Connection",
-        tools=("gmail_connect", "gmail_status", "gmail_disconnect"),
-    ),
-    Group(
-        heading="Inbox & threads",
-        tools=(
-            "gmail_curate_inbox",
-            "gmail_list_inbox",
-            "gmail_get_thread",
-            "gmail_get_attachment",
-            "gmail_mark_thread_read",
-            "gmail_archive_thread",
-            "gmail_mark_thread_done",
-            "gmail_unmark_thread_done",
-        ),
-    ),
-    Group(
-        heading="Triage ledger",
-        intro=(
-            "Banked triage judgments, so the same thread is not re-reasoned "
-            "every morning."
-        ),
-        tools=("inbox_get_curation", "inbox_search", "inbox_save_curation"),
-    ),
-    Group(
-        heading="Drafts & sending",
-        tools=(
-            "gmail_compose",
-            "gmail_reply_to_thread",
-            "gmail_update_draft",
-            "gmail_get_draft",
-            "gmail_list_drafts",
-            "gmail_discard_draft",
-            "gmail_send",
-            "gmail_add_attachment",
-            "gmail_remove_attachment",
-        ),
-        outro=(
-            '<Callout type="info">\n'
-            "Drafts are written, not sent. `gmail_send` only ever sends a draft "
-            "that already\nexists, so the user reviews the text in the composer "
-            "before anything leaves the\naccount.\n"
-            "</Callout>"
-        ),
-    ),
-    Group(
-        heading="PDF forms & signing",
-        intro="See [PDF Forms](/docs/mcp/pdf-forms) for the full workflow.",
-        tools=("pdf_open", "pdf_edit", "pdf_request_signature", "pdf_export"),
-        outro=(
-            '<Callout type="warn">\n'
-            "The signature itself is a step only the user can complete by typing "
-            "their own\nname in the signing UI. The assistant fills fields; it "
-            "cannot sign on the user's\nbehalf.\n"
-            "</Callout>"
-        ),
-    ),
-    Group(
-        heading="Push notifications & settings",
-        intro=(
-            "See [Gmail Webhook Setup](/docs/gmail-webhooks) for the event "
-            "payloads and\nsignature scheme."
-        ),
-        tools=(
-            "webhook_settings",
-            "webhook_subscribe",
-            "webhook_list",
-            "webhook_rotate_secret",
-            "webhook_unsubscribe",
-            "gmail_watch_start",
-            "gmail_watch_stop",
-        ),
-    ),
-)
+GROUPS: tuple[Group, ...] = ()
 
 
 class DriftError(RuntimeError):
@@ -191,13 +116,10 @@ def _render(surface: dict[str, str]) -> str:
     lines = [
         BEGIN_MARKER,
         "",
-        f"Once connected, your assistant has {len(surface)} tools, covering Gmail "
-        "(via the",
-        "official API), PDF form-filling and signing, and webhook delivery. Tools "
+        f"Once connected, your assistant has {len(surface)} Telephone tools. Tools "
         "marked",
-        "**UI** render an interactive MCP App in clients that support",
-        "it (an inbox dashboard, a draft composer, a signing surface) and fall back to",
-        "plain structured output everywhere else.",
+        "**UI** render an interactive MCP App in clients that support it and fall",
+        "back to plain structured output everywhere else.",
         "",
         "Every tool takes a `user_id` that the server injects from the authenticated",
         "principal - clients never pass it.",

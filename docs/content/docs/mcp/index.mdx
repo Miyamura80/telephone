@@ -3,7 +3,9 @@ title: Overview
 description: Connect AI assistants to use your tools via MCP
 ---
 
-The MCP server lets AI assistants call your tools directly. Set it up once and any MCP-compatible client can use all available tools without manual copy-pasting.
+The MCP server is where Telephone's agents connect. Set it up once and any MCP-compatible client can use the available tools without manual copy-pasting.
+
+Once the call tools ship (next release), agent CLIs such as Codex stay on a line by long-polling `say`/`listen`, while ChatGPT is woken by signed MCP Events webhooks. See [Coming next: call tools](/docs/mcp/tools#coming-next-call-tools-planned).
 
 **Local clients** (Claude Code, Cursor, VS Code) spawn the server over **stdio** - no HTTP server or port configuration needed. **Cloud clients** (claude.ai, Cowork, ChatGPT) run in a vendor's cloud and connect to your deployed **streamable-HTTP** endpoint at `/mcp` as a remote connector.
 

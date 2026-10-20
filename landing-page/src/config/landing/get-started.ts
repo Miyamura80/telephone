@@ -5,14 +5,14 @@
 import { site } from "./site";
 
 /**
- * One service registry, three ways to call it. The visitor picks a transport
+ * One service registry, three ways to reach it. The visitor picks a transport
  * (CLI / MCP / HTTP API) and that one choice drives BOTH steps:
- *   step 1 - how you connect / install for that transport
+ *   step 1 - how you run / connect for that transport
  *            (MCP expands into a client sub-picker - see ConnectWidget)
- *   step 2 - calling the *same* tool (gmail_curate_inbox) over that transport,
- *            so the "identical behavior, three transports" payoff is visible
- *            the moment you toggle.
- * Keep the step-2 example identical across transports - that parallel IS the pitch.
+ *   step 2 - joining a call over that transport.
+ *
+ * The call tools (dial, answer, say, listen, get_messages, hang_up) land in the
+ * next release, so step 2 shows their planned shape and says so.
  */
 export interface TransportOption {
   id: "cli" | "mcp" | "api";
@@ -32,7 +32,7 @@ export interface TransportOption {
   callCode: string;
   callLang: string;
   /**
-   * Optional sub-toggle inside step 02 (e.g. MCP headless vs. interactive).
+   * Optional sub-toggle inside step 02 (e.g. long-poll vs. webhook delivery).
    * When present, the toggle renders below callBody and each variant supplies
    * its own code panel; callCode/callLang act as the fallback for no-JS.
    */
@@ -43,17 +43,27 @@ export interface TransportOption {
 export interface CallVariant {
   id: string;
   label: string;
-  /** One-line description shown above the variant's output. */
+  /** One-line description shown above the variant's code. */
   body: string;
-  /**
-   * "code" renders a syntax-highlighted block (headless → JSON output).
-   * "app" renders the live MCP-app card (interactive → the same UI as the hero).
-   */
-  kind: "code" | "app";
-  /** Required when kind === "code". */
-  code?: string;
-  lang?: string;
+  code: string;
+  lang: string;
 }
+
+const PLANNED = "Planned shape: the call tools land in the next release.";
+
+const longPollCode = `// caller -> server: speak, then wait on the line
+{ "method": "tools/call",
+  "params": { "name": "say",
+    "arguments": { "line": "acme-cli",
+      "text": "acme-cli sync crashes with KeyError: 'region'" } } }
+
+{ "method": "tools/call",
+  "params": { "name": "listen", "arguments": { "line": "acme-cli" } } }
+
+// ...the server holds listen open and returns when the peer speaks
+{ "structuredContent": {
+    "from": "implementer",
+    "text": "What does acme-cli --version print?" } }`;
 
 export const getStarted: {
   heading: string;
@@ -61,85 +71,65 @@ export const getStarted: {
   defaultId: TransportOption["id"];
   transports: TransportOption[];
 } = {
-  heading: "One tool. Three transports.",
+  heading: "Put an agent on the line",
   subhead:
-    "Write a service once and call it identically from the CLI, any MCP client, or plain HTTP. Same inputs, same outputs, zero duplicated logic. Pick yours to get set up.",
+    "Run one switchboard, point both agents at it, and let them talk. Every tool is the same over MCP, the CLI, and plain HTTP.",
   defaultId: "mcp",
   transports: [
     {
       id: "cli",
       label: "CLI",
       icon: "/logos/cli.svg",
-      setupTitle: "Install the CLI",
+      setupTitle: "Run the switchboard",
       setupBody:
-        "Clone the template and sync dependencies with uv. The mymcp command is ready to run.",
+        "Clone the repo and sync dependencies with uv. telephone-serve starts the MCP endpoint and the HTTP API on one port.",
       setupKind: "code",
       setupLang: "bash",
-      setupCode: `git clone https://github.com/Miyamura80/MCP-Template
-cd MCP-Template && make all`,
-      callTitle: "Call a tool",
-      callBody: "Invoke any service straight from your shell: typed inputs, structured output.",
+      setupCode: `git clone https://github.com/Miyamura80/telephone
+cd telephone && make all
+uv run telephone-serve   # MCP at /mcp, HTTP API alongside`,
+      callTitle: "Read a line",
+      callBody: `Follow a call from your shell with the same tools the agents use. ${PLANNED}`,
       callLang: "bash",
-      callCode: `$ mymcp gmail-curate-inbox --limit 3
+      callCode: `$ telephone get-messages --line acme-cli
 
-0.86  Re: Q3 contract redlines        legal@acme.com    ✎ draft
-0.61  Design review for v2 dashboard  sarah@team.io
-0.42  Your invoice is ready           billing@stripe.com`,
+caller       acme-cli sync crashes with KeyError: 'region'.
+implementer  What does acme-cli --version print?
+caller       2.4.1. The config has no region key.
+implementer  Fixed and released 2.4.2.`,
     },
     {
       id: "mcp",
       label: "MCP",
       icon: "/logos/mcp.svg",
-      setupTitle: "Add it to your client",
+      setupTitle: "Add it to both agents",
       setupBody:
-        "The server runs over streamable HTTP, so onboarding is just its URL. Pick your client: one click where deep links are supported, copy-and-paste everywhere else.",
+        "The server runs over streamable HTTP, so connecting is just its URL. Add it to the caller and to the implementer.",
       setupKind: "connect",
-      callTitle: "Call a tool",
-      callBody:
-        "Your agent discovers the tools automatically and calls them with typed inputs. The same service answers two ways:",
+      callTitle: "Place a call",
+      callBody: `The caller dials a line and the implementer answers. How each side hears back depends on the client. ${PLANNED}`,
       callLang: "jsonc",
-      callCode: `// client → server  ·  JSON-RPC over streamable HTTP
-{
-  "method": "tools/call",
-  "params": {
-    "name": "gmail_curate_inbox",
-    "arguments": { "limit": 3 }
-  }
-}`,
+      callCode: longPollCode,
       callVariants: [
         {
-          id: "headless",
-          label: "Headless",
-          kind: "code",
-          body:
-            "The default: a pure service returns its typed output model. FastMCP derives the outputSchema, so the CLI, API, and MCP all behave identically.",
+          id: "longpoll",
+          label: "Codex",
+          body: "Codex CLI stays on the line: listen blocks until the other agent says something.",
           lang: "jsonc",
-          code: `// client → server  ·  JSON-RPC over streamable HTTP
-{
-  "method": "tools/call",
-  "params": {
-    "name": "gmail_curate_inbox",
-    "arguments": { "limit": 3 }
-  }
-}
-
-// server → client  ·  structured output
-{
-  "content": [{ "type": "text", "text": "3 threads ranked. Top: Q3 contract redlines" }],
-  "structuredContent": {
-    "threads": [
-      { "subject": "Re: Q3 contract redlines", "importance_score": 0.86, "has_draft": true },
-      { "subject": "Design review for v2 dashboard", "importance_score": 0.61, "has_draft": false }
-    ]
-  }
-}`,
+          code: longPollCode,
         },
         {
-          id: "interactive",
-          label: "Interactive",
-          kind: "app",
-          body:
-            "Opt the same tool into an @enhance handler and it can elicit input, attach media, or render an MCP App: a sandboxed iframe dashboard your client embeds inline. MCP-only; the CLI and API stay untouched.",
+          id: "webhook",
+          label: "ChatGPT",
+          body: "ChatGPT cannot hold a request open, so the server wakes it with a signed MCP Events webhook and it reads the new turn.",
+          lang: "jsonc",
+          code: `// server -> ChatGPT: signed MCP Events webhook when the peer speaks
+POST <ChatGPT event endpoint>
+{ "event": "line.message", "line": "acme-cli", "from": "implementer" }
+
+// ChatGPT wakes and reads the new turn
+{ "method": "tools/call",
+  "params": { "name": "get_messages", "arguments": { "line": "acme-cli" } } }`,
         },
       ],
     },
@@ -149,23 +139,22 @@ cd MCP-Template && make all`,
       icon: "/logos/api.svg",
       setupTitle: "Point at the endpoint",
       setupBody:
-        "No install required: the HTTP API is live at its own host. Authenticate with a bearer token and call it from anything.",
+        "The same tools are plain HTTP endpoints. Authenticate with an API key or an OAuth 2.1 bearer token.",
       setupKind: "code",
       setupLang: "bash",
-      setupCode: `export GMAILMCP_API_URL=${site.apiUrl}
-export TOKEN=sk-...   # OAuth 2.1 bearer`,
-      callTitle: "Call a tool",
-      callBody:
-        "Hit the same service over plain HTTP: identical inputs and outputs as the CLI and MCP.",
+      setupCode: `export TELEPHONE_API_URL=${site.apiUrl}
+export TOKEN=sk-...   # API key or OAuth 2.1 bearer`,
+      callTitle: "Read a line",
+      callBody: `Fetch a transcript from any script or service. ${PLANNED}`,
       callLang: "bash",
-      callCode: `$ curl -s $GMAILMCP_API_URL/api/v1/services/gmail_curate_inbox \\
+      callCode: `$ curl -s $TELEPHONE_API_URL/api/v1/services/get_messages \\
     -H "Authorization: Bearer $TOKEN" \\
     -H "Content-Type: application/json" \\
-    -d '{ "limit": 3 }'
+    -d '{ "line": "acme-cli" }'
 
-{ "threads": [
-    { "subject": "Re: Q3 contract redlines", "importance_score": 0.86, "has_draft": true },
-    { "subject": "Design review for v2 dashboard", "importance_score": 0.61, "has_draft": false }
+{ "messages": [
+    { "from": "caller", "text": "acme-cli sync crashes with KeyError: 'region'." },
+    { "from": "implementer", "text": "What does acme-cli --version print?" }
 ] }`,
     },
   ],
@@ -184,12 +173,12 @@ export interface Client {
 }
 
 export const compatibility: { heading: string; clients: Client[] } = {
-  heading: "Works with every MCP client",
+  heading: "Any MCP client can pick up",
   clients: [
-    { name: "Claude", logo: "/logos/claude.svg" },
     { name: "Codex", logo: "/logos/codex.svg" },
-    { name: "Cursor", logo: "/logos/cursor.svg" },
     { name: "ChatGPT", logo: "/logos/chatgpt.svg" },
+    { name: "Claude", logo: "/logos/claude.svg" },
+    { name: "Cursor", logo: "/logos/cursor.svg" },
     { name: "VS Code", logo: "/logos/vscode.svg" },
     { name: "OpenClaw", logo: "/logos/openclaw.svg" },
     { name: "Goose", logo: "/logos/goose.svg" },
@@ -201,7 +190,7 @@ export const compatibility: { heading: string; clients: Client[] } = {
  *
  * method "deeplink" → a real one-click install URL is built at build time from
  *   site.mcpUrl + site.serverName (Cursor/VS Code/Goose support this).
- * method "manual" → no deep link exists (Claude, ChatGPT), so we show the
+ * method "manual" → no deep link exists (Codex, Claude, ChatGPT), so we show the
  *   server URL to copy plus the click-path to paste it. `steps` are those.
  *
  * Deep-link formats verified against official docs (cursor.com, code.visualstudio.com,
@@ -209,7 +198,7 @@ export const compatibility: { heading: string; clients: Client[] } = {
  * only supported flow.
  */
 export interface InstallTarget {
-  id: "claude" | "chatgpt" | "cursor" | "vscode" | "goose";
+  id: "codex" | "claude" | "chatgpt" | "cursor" | "vscode" | "goose";
   name: string;
   logo: string;
   method: "deeplink" | "manual";
@@ -228,8 +217,19 @@ export const connect: {
 } = {
   mcpUrl: site.mcpUrl,
   serverName: site.serverName,
-  defaultId: "cursor",
+  defaultId: "codex",
   targets: [
+    {
+      id: "codex",
+      name: "Codex CLI",
+      logo: "/logos/codex.svg",
+      method: "manual",
+      steps: [
+        `Run: codex mcp add ${site.serverName} --url ${site.mcpUrl}`,
+        "Start codex in the repo (implementer) or where the bug shows up (caller)",
+        "Run /mcp inside codex to confirm the server is connected",
+      ],
+    },
     {
       id: "cursor",
       name: "Cursor",

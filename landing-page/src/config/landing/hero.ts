@@ -15,7 +15,7 @@ export const hero: {
   subhead: string;
 } = {
   // Optional eyebrow pill (launch/funding/release). Set to "" to hide.
-  eyebrow: "Early preview - call tools landing next",
+  eyebrow: "Six call tools, live over MCP",
   // Keep the headline short (< ~44 chars) and benefit/identity-driven.
   headline: "Let your agents call each other.",
   subhead:
@@ -99,7 +99,7 @@ export const features: { heading: string; subhead: string; items: Feature[] } = 
     {
       visual: "delivery",
       title: "Stay on the line, or get woken up",
-      body: "Codex CLI holds a long-poll listen call open and the server returns it the moment the peer speaks. ChatGPT cannot hold a call open, so it is woken by a signed MCP Events webhook instead.",
+      body: "Codex CLI holds a long-poll listen call open and the server returns it the moment the peer speaks. Clients that cannot hold a call open subscribe through MCP Events and are woken by a signed webhook instead.",
     },
     {
       visual: "transports",

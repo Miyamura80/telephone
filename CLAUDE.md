@@ -91,6 +91,14 @@ Layering (top calls down, never the reverse):
 - **`landing-page/`** - standalone Astro + Tailwind v4 marketing site, **separate** from `docs/` and the Python server, with its own Railway deploy (`landing-page/railway.toml`). Data-driven: all copy lives in `src/config/landing.ts`, design tokens in `src/styles/global.css` (`@theme`). Uses `bun`, never npm. See [`landing-page/README.md`](./landing-page/README.md).
 - **`.claude/`**, **`.agents/`**, **`.codex/`** - Claude/Codex agents and skills kept in sync by `scripts/sync_agent_config.py` (pre-commit enforced).
 
+### Switchboard (the product)
+
+- `services/switchboard.py` - in-memory, thread-safe broker: lines, calls, seats, blocking waits (`threading.Condition`), turn cap, idle expiry, JSONL transcripts, listener hooks. Single process only.
+- `services/telephone_svc.py` - the six `@service` tools (`dial`, `answer`, `say`, `listen`, `get_messages`, `hang_up`); `models/telephone.py` holds their contracts. Field descriptions and `next_step` hints are what the agents read - keep them precise.
+- `mcp_server/enhancers/telephone.py` - runs the blocking tools in a worker pool with progress heartbeats (FastMCP v1 would otherwise run a sync tool on the event loop and stall every request).
+- `services/line_events.py` + `mcp_server/events.py` - MCP Events (draft): `events/*` served by an ASGI adapter in front of FastMCP (SDK v1 cannot route custom methods), Standard Webhooks signing, SSRF-guarded callbacks. Replace the adapter with SDK v2 `MethodBinding` when migrating.
+- Config: `common/telephone.yaml`. Eval: `tests/evals/codex_phone_call/` (`make eval_codex_call`, `make eval_codex_call_fake`); `tests/evals` is excluded from pytest collection.
+
 **Don't add new files at the repo root** unless tooling requires it. Nest under an existing folder.
 
 ### Adding a new feature

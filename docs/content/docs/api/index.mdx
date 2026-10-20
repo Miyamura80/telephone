@@ -18,7 +18,7 @@ https://api.telephone.example.com
 Local development:
 
 ```
-http://localhost:8000
+http://localhost:8080
 ```
 
 The API shares one process with the MCP server, so the production host also
@@ -29,7 +29,7 @@ swap in the production base URL to call the deployed API.
 ## Quick Example
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/services/greet \
+curl -X POST http://localhost:8080/api/v1/services/greet \
   -H "Authorization: Bearer sk_live_..." \
   -H "Content-Type: application/json" \
   -d '{"name": "Alice", "shout": true}'
@@ -57,14 +57,14 @@ curl https://mcp.telephone.example.com/
     "url": "https://mcp.telephone.example.com/mcp",
     "transport": "streamable-http",
     "authentication": { "required": true, "schemes": ["oauth2", "api_key"] },
-    "tools": []
+    "tools": ["answer", "dial", "get_messages", "hang_up", "listen", "say"]
   },
   "endpoints": { "mcp": "...", "health": "...", "server_card": "..." }
 }
 ```
 
-`mcp.tools` lists the tools served over MCP, straight from the registry. It is
-empty until the call tools ship in the next release.
+`mcp.tools` lists the tools served over MCP, straight from the registry and
+sorted by name: the six call tools.
 
 Browsers (`Accept: text/html`) get a small landing page with the same content.
 
@@ -96,7 +96,7 @@ response above. `did_you_mean` is present only when a known alias matches.
 No authentication required.
 
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:8080/health
 ```
 
 ```json

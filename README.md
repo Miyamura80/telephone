@@ -58,14 +58,37 @@ One MCP server, any number of named **lines**. Each participant connects to the 
 
 Why not plain server push? Under the current MCP spec (2026-07-28), a server may only send its own requests while a client request is in flight, and Codex CLI does not surface `notifications/message` to the model. A tool result is the one channel every agent reads, so Telephone delivers every message as a tool result or, for clients that support it, an MCP Event.
 
+## Tools
+
+| Tool | Who | What it does |
+|---|---|---|
+| `dial` | caller | Opens a call on a named line with your opening message; returns your `seat` and waits for the first reply |
+| `answer` | implementer | Takes the call on a line (waits for someone to dial); returns your `seat` and the opening message |
+| `say` | either | Sends a message, then waits for the reply (`wait_s: 0` returns at once) |
+| `listen` | either | Waits for the other agent's next message |
+| `get_messages` | either | Reads the whole transcript without waiting |
+| `hang_up` | either | Ends the call; the caller reports `resolved: true/false` |
+
+Every call tool except `get_messages` (which returns the plain transcript) answers with an `outcome` (`message`, `waiting`, `no_call`, `ended`) and a plain-words `next_step`, so an agent knows to call `listen` again instead of ending its turn. Calls also end at `max_turns` or after `idle_timeout_s` (see [`common/telephone.yaml`](common/telephone.yaml)), so two agents can never loop forever. Each call is logged as JSONL under `.telephone/transcripts/`.
+
+Lines live in memory: run a single server process.
+
+## Eval: Codex phones Codex
+
+```bash
+make eval_codex_call        # two real Codex CLIs fix a planted acme-cli bug over a call
+make eval_codex_call_fake   # same harness with scripted agents (no LLM)
+```
+
+The caller runs read-only with a broken `acme-cli` and no source; the implementer has the repo. The run passes only if the caller hangs up `resolved: true`, the implementer asked before fixing, `acme-cli sync` now works, and the fixture's tests pass. See [`tests/evals/codex_phone_call/`](tests/evals/codex_phone_call/README.md).
+
 ## Status
 
 | Piece | State |
 |---|---|
-| Server scaffolding (CLI, MCP over streamable HTTP, HTTP API, auth, billing, deploy) | Ready |
-| Call tools: `dial`, `answer`, `say`, `listen`, `get_messages`, `hang_up` | Next PR |
-| MCP Events delivery for ChatGPT | Next PR |
-| Two-Codex eval (caller with a broken CLI phones the implementer) | Next PR |
+| Call tools over MCP (long-poll delivery for Codex CLI and any MCP client) | Ready |
+| MCP Events (`events/*`, signed webhooks) | Served and tested with a simulated subscriber |
+| ChatGPT negotiating events end to end | Needs the move to MCP Python SDK v2 (protocol 2026-07-28) |
 
 ## Quick Start
 
@@ -78,10 +101,14 @@ uv run telephone-serve          # HTTP API + MCP at /mcp on one port
 uv run telephone-mcp            # legacy: stdio MCP only, for local dev
 ```
 
-Connect a client to the running server, e.g. Codex CLI:
+Connect a client to the running server with an API key ([how to create one](docs/content/docs/api/authentication.mdx)), e.g. Codex CLI:
 
-```bash
-codex mcp add telephone --url http://localhost:8080/mcp
+```toml
+# ~/.codex/config.toml
+[mcp_servers.telephone]
+url = "http://localhost:8080/mcp"
+env_http_headers = { "X-API-KEY" = "TELEPHONE_API_KEY" }
+tool_timeout_sec = 600   # lets `listen` wait for long replies
 ```
 
 ## Architecture

@@ -114,10 +114,18 @@ switchboard between two MCP clients. A "caller" agent dials a named line, an
 "implementer" agent answers, and the two take turns speaking until one hangs
 up. Canonical case: an agent hits a bug in a CLI tool it cannot modify, dials
 the agent that has that codebase, answers its diagnosis questions, and confirms
-the fix once it ships. Codex CLI stays on the line with long-poll \`listen\`
-calls; ChatGPT is woken by signed MCP Events webhooks. The call tools (\`dial\`,
-\`answer\`, \`say\`, \`listen\`, \`get_messages\`, \`hang_up\`) land in the
-next release. The same tools are exposed over a CLI and a plain HTTP API.
+the fix once it ships. Six call tools are live over MCP: \`dial\`,
+\`answer\`, \`say\`, \`listen\`, \`get_messages\` and \`hang_up\`.
+\`dial\` and \`answer\` return a \`seat\` token that every later call passes.
+Codex CLI stays on the line because \`dial\`, \`answer\`, \`say\` and
+\`listen\` block up to \`wait_s\` (50s default, 540s max) and return as soon
+as the peer speaks; set Codex \`tool_timeout_sec\` to 600 for long calls.
+Event-driven clients subscribe to \`line.message\` / \`line.ended\` through
+MCP Events (draft) and are woken by signed webhooks; ChatGPT using MCP
+Events end to end waits on the server's move to MCP Python SDK v2 (protocol
+2026-07-28). A call ends on \`hang_up\`, at \`max_turns\` (60 messages), or
+after 900s idle. The same services are exposed over a CLI and a plain HTTP API
+at \`/api/v1/services/<name>\`.
 
 ${whenToUseSection()}
 

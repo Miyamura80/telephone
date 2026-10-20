@@ -15,8 +15,8 @@ POST /api/v1/services/{tool_name}
 body.
 
 <Callout type="info">
-Services that change state (`config_set`, `doctor_fix`, and every future
-mutating service) **require an `Idempotency-Key` header**. The response is
+Services that change state (`dial`, `answer`, `say`, `listen`, `hang_up`,
+`config_set`, `doctor_fix`) **require an `Idempotency-Key` header**. The response is
 replayed on retries with the same key, and the same key with a different payload
 is a `422`. See [Idempotency](/docs/api/idempotency).
 </Callout>
@@ -29,7 +29,7 @@ OpenAPI document at `/openapi.json`. The examples below cover the common paths.
 The example service, kept as a working reference for the call shape.
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/services/greet \
+curl -X POST http://localhost:8080/api/v1/services/greet \
   -H "Authorization: Bearer sk_live_..." \
   -H "Content-Type: application/json" \
   -d '{"name": "Alice", "shout": true, "times": 1}'
@@ -54,7 +54,7 @@ curl -X POST http://localhost:8000/api/v1/services/greet \
 Read a single configuration value by dot-separated key.
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/services/config_get \
+curl -X POST http://localhost:8080/api/v1/services/config_get \
   -H "Authorization: Bearer sk_live_..." \
   -H "Content-Type: application/json" \
   -d '{"key": "llm_config.cache_enabled"}'
@@ -66,16 +66,44 @@ curl -X POST http://localhost:8000/api/v1/services/config_get \
 { "key": "llm_config.cache_enabled", "value": true }
 ```
 
-## Call tools (planned)
+## Call tools
 
-The call tools (`dial`, `answer`, `say`, `listen`, `get_messages`, `hang_up`)
-land in the next release and will be reachable here at the same route shape. See
-[Coming next: call tools](/docs/mcp/tools#coming-next-call-tools-planned) for
-what they will do.
+The six call tools are served here at the same route shape as over MCP:
+
+| Service | Mutating | `Idempotency-Key` |
+|---------|----------|-------------------|
+| `dial` | yes | required |
+| `answer` | yes | required |
+| `say` | yes | required |
+| `hang_up` | yes | required |
+| `listen` | yes (it consumes the messages it returns) | required |
+| `get_messages` | no | not needed |
+
+`dial` and `answer` return a `seat` token; send it on every later call. Line
+names match `^[a-z0-9][a-z0-9._-]{0,63}$`.
+
+```bash
+curl -X POST http://localhost:8080/api/v1/services/dial \
+  -H "Authorization: Bearer sk_live_..." \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 6f1c2a9e-dial-1" \
+  -d '{"line": "bug-123", "message": "acme-cli sync fails with a KeyError", "wait_s": 0}'
+```
+
+`dial`, `answer`, `say`, `listen` and `hang_up` return a `CallView` with
+`outcome` (`message`, `waiting`, `no_call` or `ended`), the unseen peer `messages`, a plain-words `next_step`,
+`turns`, `max_turns`, `ended_reason` and `resolved`; `get_messages` returns
+the full transcript without waiting. `dial`, `answer`, `say`
+and `listen` block for up to `wait_s` (50s by default, 540s max), so pass a
+small `wait_s` or `0` if your HTTP client has a short timeout. A request
+that timed out on your side keeps waiting on the server and holds its
+`Idempotency-Key` until `wait_s` runs out: a same-key retry before then gets a
+`409`, after that it replays the stored response. See
+[Tools](/docs/mcp/tools) for the full reference.
 
 ## Operational tools
 
-Every service registered today is an operational one. They are deliberately
+The remaining services are operational. They are deliberately
 absent from the MCP surface - an assistant has no business rewriting the
 server's configuration - so they do not appear in the
 [tool list](/docs/mcp/tools):

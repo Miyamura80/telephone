@@ -11,8 +11,8 @@ import { site } from "./site";
  *            (MCP expands into a client sub-picker - see ConnectWidget)
  *   step 2 - joining a call over that transport.
  *
- * The call tools (dial, answer, say, listen, get_messages, hang_up) land in the
- * next release, so step 2 shows their planned shape and says so.
+ * Step 2 uses the six shipped call tools (dial, answer, say, listen,
+ * get_messages, hang_up). Keep the payloads in step with models/telephone.py.
  */
 export interface TransportOption {
   id: "cli" | "mcp" | "api";
@@ -49,21 +49,25 @@ export interface CallVariant {
   lang: string;
 }
 
-const PLANNED = "Planned shape: the call tools land in the next release.";
+const longPollCode = `// caller -> server: dial, then wait on the line (up to wait_s)
+{ "method": "tools/call",
+  "params": { "name": "dial",
+    "arguments": { "line": "acme-cli",
+      "message": "acme-cli sync crashes with KeyError: 'region'" } } }
 
-const longPollCode = `// caller -> server: speak, then wait on the line
+// ...the server holds dial open and returns when the peer speaks
+{ "structuredContent": {
+    "outcome": "message",
+    "seat": "<seat token>",
+    "messages": [ { "seq": 2, "sender": "implementer",
+      "text": "What does acme-cli --version print?" } ],
+    "next_step": "Answer their questions with say (it waits for the reply). ..." } }
+
+// reply on the same seat; say waits for the next turn too
 { "method": "tools/call",
   "params": { "name": "say",
-    "arguments": { "line": "acme-cli",
-      "text": "acme-cli sync crashes with KeyError: 'region'" } } }
-
-{ "method": "tools/call",
-  "params": { "name": "listen", "arguments": { "line": "acme-cli" } } }
-
-// ...the server holds listen open and returns when the peer speaks
-{ "structuredContent": {
-    "from": "implementer",
-    "text": "What does acme-cli --version print?" } }`;
+    "arguments": { "line": "acme-cli", "seat": "<seat token>",
+      "text": "2.4.1. The config has no region key." } } }`;
 
 export const getStarted: {
   heading: string;
@@ -88,15 +92,16 @@ export const getStarted: {
       setupCode: `git clone https://github.com/Miyamura80/telephone
 cd telephone && make all
 uv run telephone-serve   # MCP at /mcp, HTTP API alongside`,
-      callTitle: "Read a line",
-      callBody: `Follow a call from your shell with the same tools the agents use. ${PLANNED}`,
+      callTitle: "Watch a call",
+      callBody:
+        "Run the bundled eval: two agents fix a broken acme-cli over a real line. Every call is logged as JSONL under .telephone/transcripts/.",
       callLang: "bash",
-      callCode: `$ telephone get-messages --line acme-cli
+      callCode: `$ make eval_codex_call_fake   # scripted agents, no LLM
+$ make eval_codex_call        # two real Codex CLIs
 
-caller       acme-cli sync crashes with KeyError: 'region'.
-implementer  What does acme-cli --version print?
-caller       2.4.1. The config has no region key.
-implementer  Fixed and released 2.4.2.`,
+$ tail -n 2 .telephone/transcripts/acme-cli__*.jsonl
+{"event": "message", "seq": 5, "sender": "caller", "text": "Re-ran it: done, 3 items synced.", ...}
+{"event": "ended", "reason": "caller hung up: fixed", "resolved": true, ...}`,
     },
     {
       id: "mcp",
@@ -107,29 +112,41 @@ implementer  Fixed and released 2.4.2.`,
         "The server runs over streamable HTTP, so connecting is just its URL. Add it to the caller and to the implementer.",
       setupKind: "connect",
       callTitle: "Place a call",
-      callBody: `The caller dials a line and the implementer answers. How each side hears back depends on the client. ${PLANNED}`,
+      callBody:
+        "The caller dials a line and the implementer answers. Both get a seat token to pass on every later call. How each side hears back depends on the client.",
       callLang: "jsonc",
       callCode: longPollCode,
       callVariants: [
         {
           id: "longpoll",
           label: "Codex",
-          body: "Codex CLI stays on the line: listen blocks until the other agent says something.",
+          body: "Codex CLI stays on the line: dial, answer, say and listen block up to wait_s (50s default) until the other agent speaks. Set tool_timeout_sec = 600 for long calls.",
           lang: "jsonc",
           code: longPollCode,
         },
         {
           id: "webhook",
-          label: "ChatGPT",
-          body: "ChatGPT cannot hold a request open, so the server wakes it with a signed MCP Events webhook and it reads the new turn.",
+          label: "MCP Events",
+          body: "Event-driven clients subscribe to line.message and get a signed webhook when the peer speaks. ChatGPT end to end waits on the server's move to MCP Python SDK v2.",
           lang: "jsonc",
-          code: `// server -> ChatGPT: signed MCP Events webhook when the peer speaks
-POST <ChatGPT event endpoint>
-{ "event": "line.message", "line": "acme-cli", "from": "implementer" }
+          code: `// client -> server: subscribe for its seat (draft MCP Events)
+{ "method": "events/subscribe",
+  "params": { "name": "line.message",
+    "arguments": { "line": "acme-cli", "seat": "<seat token>" },
+    "delivery": { "mode": "webhook", "url": "https://client.example.com/hook",
+                  "secret": "whsec_<client-generated base64 secret>" } } }
 
-// ChatGPT wakes and reads the new turn
+// server -> client when the peer speaks (Standard Webhooks)
+POST https://client.example.com/hook
+webhook-id: <event id>
+webhook-timestamp: <unix seconds>
+webhook-signature: v1,<base64 HMAC-SHA256 of "id.timestamp.body">
+X-MCP-Subscription-Id: <subscription id>
+
+// client wakes, reads without waiting, replies
 { "method": "tools/call",
-  "params": { "name": "get_messages", "arguments": { "line": "acme-cli" } } }`,
+  "params": { "name": "listen",
+    "arguments": { "line": "acme-cli", "seat": "<seat token>", "wait_s": 0 } } }`,
         },
       ],
     },
@@ -145,17 +162,19 @@ POST <ChatGPT event endpoint>
       setupCode: `export TELEPHONE_API_URL=${site.apiUrl}
 export TOKEN=sk-...   # API key or OAuth 2.1 bearer`,
       callTitle: "Read a line",
-      callBody: `Fetch a transcript from any script or service. ${PLANNED}`,
+      callBody:
+        "Fetch a transcript from any script or service with your seat token. dial, answer, say, listen and hang_up change state, so they also need an Idempotency-Key header.",
       callLang: "bash",
       callCode: `$ curl -s $TELEPHONE_API_URL/api/v1/services/get_messages \\
     -H "Authorization: Bearer $TOKEN" \\
     -H "Content-Type: application/json" \\
-    -d '{ "line": "acme-cli" }'
+    -d '{ "line": "acme-cli", "seat": "<seat token>" }'
 
-{ "messages": [
-    { "from": "caller", "text": "acme-cli sync crashes with KeyError: 'region'." },
-    { "from": "implementer", "text": "What does acme-cli --version print?" }
-] }`,
+{ "line": "acme-cli", "status": "connected", "turns": 2, "max_turns": 60,
+  "messages": [
+    { "seq": 1, "sender": "caller", "text": "acme-cli sync crashes with KeyError: 'region'.", ... },
+    { "seq": 2, "sender": "implementer", "text": "What does acme-cli --version print?", ... }
+  ], ... }   # abbreviated`,
     },
   ],
 };

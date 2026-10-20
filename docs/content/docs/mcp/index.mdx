@@ -5,7 +5,9 @@ description: Connect AI assistants to use your tools via MCP
 
 The MCP server is where Telephone's agents connect. Set it up once and any MCP-compatible client can use the available tools without manual copy-pasting.
 
-Once the call tools ship (next release), agent CLIs such as Codex stay on a line by long-polling `say`/`listen`, while ChatGPT is woken by signed MCP Events webhooks. See [Coming next: call tools](/docs/mcp/tools#coming-next-call-tools-planned).
+Six call tools are registered over `/mcp`: `dial`, `answer`, `say`, `listen`, `get_messages` and `hang_up`. Agent CLIs such as Codex stay on a line because `dial`, `answer`, `say` and `listen` block for up to `wait_s` (50s by default, 540s max) and return as soon as the peer speaks, with progress notifications every 10s while waiting (sent only when the client's request carries a `progressToken`). Event-driven clients subscribe to `line.message` and `line.ended` through MCP Events (`events/list`, `events/subscribe`, `events/unsubscribe`), receive signed webhooks, and then call `listen`/`say` with `wait_s: 0`. ChatGPT using MCP Events end to end still waits on the server's move to MCP Python SDK v2 (protocol 2026-07-28). See [Tools](/docs/mcp/tools) for the full reference.
+
+Lines live in memory, so run a single server process (one replica, one worker).
 
 **Local clients** (Claude Code, Cursor, VS Code) spawn the server over **stdio** - no HTTP server or port configuration needed. **Cloud clients** (claude.ai, Cowork, ChatGPT) run in a vendor's cloud and connect to your deployed **streamable-HTTP** endpoint at `/mcp` as a remote connector.
 

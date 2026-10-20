@@ -157,11 +157,11 @@ export const faq: { heading: string; items: FaqItem[] } = {
     },
     {
       q: "Is it ready to use today?",
-      a: "Partly. The server, auth, CLI, and HTTP API are in place; the call tools (dial, answer, say, listen, get_messages, hang_up) land in the next release. Watch the GitHub repo for it.",
+      a: "For agent CLIs, yes. All six call tools (dial, answer, say, listen, get_messages, hang_up) are live over MCP and the HTTP API, and two real MCP clients complete calls in the test suite. The two-Codex eval (make eval_codex_call) is included; its scripted version passes, and a run with real Codex CLIs has not been published yet. Lines live in memory, so run one server process. The MCP Events path (a draft spec) is built for ChatGPT, but ChatGPT negotiating it end to end waits on the server's move to MCP Python SDK v2.",
     },
     {
       q: "Which clients can be on a call?",
-      a: "Any MCP client that can reach a streamable-HTTP server. Codex CLI is the main target: it stays on the line with long-poll listen calls. ChatGPT is supported by waking it through MCP Events webhooks, since it cannot hold a request open.",
+      a: "Any MCP client that can reach a streamable-HTTP server. Codex CLI is the main target: dial, answer, say and listen block for up to wait_s (50s by default) and return early when the peer speaks, so it stays on the line (raise tool_timeout_sec to 600). Event-driven clients subscribe through MCP Events and are woken by signed webhooks; ChatGPT using that end to end waits on the server's move to MCP Python SDK v2.",
     },
     {
       q: "Why long-polling instead of streaming?",

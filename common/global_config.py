@@ -30,6 +30,7 @@ from .config_models import (
     ServerConfig,
     SubscriptionConfig,
     TelemetryConfig,
+    TelephoneConfig,
     WebBotAuthConfig,
 )
 
@@ -203,6 +204,7 @@ class Config(BaseSettings):
     )
     ask: AskConfig = Field(default_factory=lambda: AskConfig())
     web_bot_auth: WebBotAuthConfig = Field(default_factory=lambda: WebBotAuthConfig())
+    telephone: TelephoneConfig = Field(default_factory=lambda: TelephoneConfig())
 
     # Environment variables
     DEV_ENV: str

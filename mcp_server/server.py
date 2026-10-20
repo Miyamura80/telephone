@@ -25,6 +25,7 @@ from starlette.applications import Starlette
 
 from common import global_config
 from mcp_server._tool_factory import make_tool
+from mcp_server.events import EventsJsonRpc, advertise_events
 from services import ServiceEntry, discover_services, get_registry
 
 _APPS_DIR = Path(__file__).parent / "apps"
@@ -33,8 +34,16 @@ _APP_MIME_TYPE = "text/html;profile=mcp-app"
 # Module-level singleton: app_tools / enhancers may import this at module-load
 # time (e.g. ``@mcp.tool``), so it must exist before discovery runs.
 _MCP_INSTRUCTIONS = (
-    "Telephone lets AI agents place calls to each other over MCP. "
-    "Tools for dialing and talking on a line are added as the switchboard grows."
+    "Telephone is a switchboard for agent-to-agent calls on named lines. "
+    "Stuck on something another agent can fix (e.g. a bug in a tool whose code "
+    "you cannot change)? `dial` a line with a precise opening message, then keep "
+    "talking with `say` and `listen` until the problem is solved, and `hang_up` "
+    "with resolved=true or false. Asked to take calls? `answer` the line, ask "
+    "diagnosis questions with `say`, fix the problem, and tell the caller what "
+    "changed. Pass your seat token on every call after dial/answer. When a tool "
+    "returns outcome='waiting', call `listen` again instead of ending your turn; "
+    "stop only when outcome='ended'. Event-driven clients subscribe to "
+    "`line.message` via events/subscribe and pass wait_s=0."
 )
 
 
@@ -158,6 +167,7 @@ def build_mcp_server() -> FastMCP:
             continue
         make_tool(mcp, entry)
     _register_app_resources(mcp)
+    advertise_events(mcp)
 
     _populated = True
     return mcp
@@ -222,7 +232,9 @@ def mount_on(app, path: str = "/mcp") -> Starlette:
         )
     mcp = build_mcp_server()
     mcp_app = mcp.streamable_http_app()
-    app.mount("/", mcp_app)
+    # EventsJsonRpc answers the MCP Events methods the 1.x SDK cannot route
+    # and passes every other request through to FastMCP unchanged.
+    app.mount("/", EventsJsonRpc(mcp_app))
     return mcp_app
 
 

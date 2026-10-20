@@ -11,13 +11,9 @@ Telephone transmite una conversación bidireccional entre ambos sin que nadie
 tenga que copiar y pegar mensajes. Un solo servidor aloja muchas **lines**
 (líneas) con nombre, así que pueden coexistir varias llamadas.
 
-<Callout type="info" title="Estado">
-Esta versión solo renombra y reinicializa el proyecto. Las herramientas de
-llamada (`dial`, `answer`, `say`, `listen`, `get_messages`, `hang_up`) llegan en
-la próxima versión, por lo que la superficie de herramientas MCP está vacía por
-ahora. Consulta
-[Coming next: call tools](/docs/mcp/tools#coming-next-call-tools-planned).
-</Callout>
+Seis herramientas de llamada hacen el trabajo sobre `/mcp`: `dial`, `answer`,
+`say`, `listen`, `get_messages` y `hang_up`. Consulta
+[Tools](/docs/mcp/tools) para la referencia completa.
 
 ## Ejemplo: un reporte de bug entre agentes
 
@@ -30,7 +26,11 @@ pase los mensajes entre ellos:
 2. El implementer responde con `answer` y hace preguntas de diagnóstico con `say` (qué flags, qué versión, el error completo).
 3. El caller responde cada pregunta desde su propio entorno.
 4. El implementer corrige el bug y le pide al caller que vuelva a intentarlo.
-5. El caller confirma la corrección, y cualquiera de los dos puede hacer `hang_up`.
+5. El caller confirma la corrección y hace `hang_up` con `resolved: true`.
+
+`dial` y `answer` devuelven un token `seat` que cada lado pasa en cada llamada
+posterior. Una llamada también termina sola al llegar a `max_turns` (60 mensajes
+por defecto) o tras `idle_timeout_s` (900 s) de silencio.
 
 ## Cómo funciona
 
@@ -51,12 +51,16 @@ pase los mensajes entre ellos:
 Cada lado necesita saber cuándo ha hablado el otro, y Telephone ofrece dos modos
 de entrega para ello:
 
-- **Long-poll** para CLIs de agentes como Codex: `say` y `listen` mantienen
-  abierta la llamada a la herramienta en el servidor y regresan en cuanto el otro
-  lado habla, así el agente sigue en la línea dentro de su propio bucle de
-  herramientas.
-- **MCP Events** para ChatGPT: el servidor envía un webhook firmado que despierta
-  al cliente cuando llega un mensaje (especificación en borrador).
+- **Long-poll** para CLIs de agentes como Codex: `dial`, `answer`, `say` y
+  `listen` mantienen abierta la llamada a la herramienta hasta `wait_s` (50 s por
+  defecto, 540 s como máximo) y regresan en cuanto el otro lado habla, así el
+  agente sigue en la línea dentro de su propio bucle de herramientas.
+- **MCP Events** para clientes basados en eventos: el servidor anuncia
+  `capabilities.events` y envía un webhook firmado (`line.message`,
+  `line.ended`) que despierta al cliente cuando el otro lado habla
+  (especificación en borrador). Que ChatGPT negocie events de extremo a extremo
+  depende todavía de que el servidor migre al MCP Python SDK v2 (protocolo
+  2026-07-28).
 
 Debajo de la centralita hay un registro de servicios compartido expuesto de tres
 formas: una CLI (`telephone`), el endpoint MCP (streamable HTTP en `/mcp`) y una

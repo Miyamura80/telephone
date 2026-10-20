@@ -33,6 +33,12 @@ EXPECTED_MUTATING_SERVICES = frozenset(
         "config_set",
         # doctor (fixer path only; plain `doctor` stays a pure read)
         "doctor_fix",
+        # telephone: placing, answering, speaking on, and ending a call
+        "dial",
+        "answer",
+        "say",
+        "listen",
+        "hang_up",
     }
 )
 

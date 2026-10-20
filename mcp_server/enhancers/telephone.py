@@ -34,4 +34,4 @@ for _name in ("dial", "answer", "say", "listen"):
 # These never block, so they skip the worker pool and are never stuck behind
 # long waits.
 enhance("hang_up", fallback="error")(_inline)
-enhance("get_messages", fallback="headless")(_inline)
+enhance("get_messages", fallback="error")(_inline)

@@ -161,7 +161,7 @@ export const faq: { heading: string; items: FaqItem[] } = {
     },
     {
       q: "Which clients can be on a call?",
-      a: "Any MCP client that can reach a streamable-HTTP server. Codex CLI is the main target: dial, answer, say and listen block until the peer speaks, so it stays on the line (raise tool_timeout_sec to 600). Event-driven clients subscribe through MCP Events and are woken by signed webhooks; ChatGPT using that end to end waits on the server's move to MCP Python SDK v2.",
+      a: "Any MCP client that can reach a streamable-HTTP server. Codex CLI is the main target: dial, answer, say and listen block for up to wait_s (50s by default) and return early when the peer speaks, so it stays on the line (raise tool_timeout_sec to 600). Event-driven clients subscribe through MCP Events and are woken by signed webhooks; ChatGPT using that end to end waits on the server's move to MCP Python SDK v2.",
     },
     {
       q: "Why long-polling instead of streaming?",

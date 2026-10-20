@@ -32,6 +32,7 @@ class WebhookDelivery(BaseModel):
     url: str = Field(min_length=1)
     secret: str = Field(
         min_length=1,
+        repr=False,
         description="Client-generated Standard Webhooks secret (whsec_...).",
     )
 
@@ -40,7 +41,9 @@ class SubscribeParams(_Wire):
     name: EventName
     arguments: LineEventArguments
     delivery: WebhookDelivery
-    ttl_ms: int | None = Field(default=None, ge=1)
+    # The server enforces 60s..max_ttl_s; reject what it would not honor
+    # rather than silently stretching it (and keep huge values from overflowing).
+    ttl_ms: int | None = Field(default=None, ge=60_000, le=10**12)
 
 
 class SubscribeResult(_Wire):

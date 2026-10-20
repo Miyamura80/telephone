@@ -209,6 +209,12 @@ class TestSwitchboardRegressions(TestTemplate):
         # The seat is still free for the implementer who is really there.
         assert board.answer("bug-1", wait_s=0) is not None
 
+    def test_transcripts_are_owner_only(self, tmp_path):
+        board = Switchboard()
+        call, _, _ = _connect(board)
+        path = tmp_path / f"bug-1__{call.call_id}.jsonl"
+        assert path.stat().st_mode & 0o777 == 0o600
+
     def test_non_ascii_seat_is_a_bad_seat(self):
         board = Switchboard()
         _connect(board)
@@ -273,6 +279,19 @@ class TestTelephoneServices(TestTemplate):
             ListenInput(line="cap", seat=dialed.seat, wait_s=0)
         )
         assert heard.outcome == "ended" and heard.messages[0].text == "bye"
+
+    def test_abandoned_dial_frees_the_line(self):
+        event = threading.Event()
+        event.set()
+        token = bind_cancel_event(event)
+        try:
+            view = telephone_svc.dial(DialInput(line="gone", message="hi", wait_s=5))
+        finally:
+            unbind_cancel_event(token)
+        assert view.outcome == "ended"
+        # The line is free right away, not after the idle timeout.
+        again = telephone_svc.dial(DialInput(line="gone", message="hi", wait_s=0))
+        assert again.outcome == "waiting"
 
     def test_answer_with_nobody_dialing(self):
         view = telephone_svc.answer(AnswerInput(line="empty", wait_s=0))

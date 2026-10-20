@@ -269,7 +269,19 @@ def score(report: Report, impl: Path, caller: Path) -> None:
     ).stdout.split()[0]
     subprocess.run(["git", "add", "-N", "."], cwd=impl, check=True)
     report.impl_diff = subprocess.run(
-        ["git", "diff", base], cwd=impl, capture_output=True, text=True
+        # Bytecode and caches from running the CLI and tests are not changes.
+        [
+            "git",
+            "diff",
+            base,
+            "--",
+            ".",
+            ":(exclude)*__pycache__*",
+            ":(exclude).pytest_cache",
+        ],
+        cwd=impl,
+        capture_output=True,
+        text=True,
     ).stdout
 
     checks = {

@@ -16,6 +16,7 @@ A line can be dialed again once its call has ended; the new call replaces it.
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import threading
 import time
@@ -121,8 +122,14 @@ class Switchboard:
         self._cond = threading.Condition()
         self._calls: dict[str, Call] = {}
         self._listeners: list[Listener] = []
-        # Events produced under the lock, emitted by _flush() after release.
+        # Events and transcript lines produced under the lock, emitted by
+        # _flush() after release so listeners and disk I/O never hold it.
         self._pending: list[CallEvent] = []
+        self._pending_writes: list[tuple[Path, str]] = []
+        # Held from draining through delivery, so concurrent flushes cannot
+        # reorder events or transcript lines. Re-entrant: a listener may call
+        # back into the board.
+        self._deliver = threading.RLock()
         self._reaper: threading.Thread | None = None
 
     # -- listeners ---------------------------------------------------------
@@ -135,8 +142,14 @@ class Switchboard:
             self._listeners.remove(listener)
 
     def _flush(self) -> None:
-        with self._cond:
-            events, self._pending = self._pending, []
+        with self._deliver:
+            with self._cond:
+                events, self._pending = self._pending, []
+                writes, self._pending_writes = self._pending_writes, []
+            _write_transcripts(writes)
+            self._emit(events)
+
+    def _emit(self, events: list[CallEvent]) -> None:
         for event in events:
             for listener in list(self._listeners):
                 try:
@@ -385,10 +398,18 @@ class Switchboard:
             return
         # Relative to the server's working directory (absolute paths also work).
         path = Path(directory) / f"{call.line}__{call.call_id}.jsonl"
+        line = json.dumps({"at": _now_iso(), **entry}) + "\n"
+        self._pending_writes.append((path, line))
+
+
+def _write_transcripts(writes: list[tuple[Path, str]]) -> None:
+    """Append transcript lines; owner-only, since they hold both agents' words."""
+    for path, line in writes:
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with path.open("a") as fh:
-                fh.write(json.dumps({"at": _now_iso(), **entry}) + "\n")
+            path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            with os.fdopen(fd, "a") as fh:
+                fh.write(line)
         except OSError:
             log.exception("could not write transcript {}", path)
 

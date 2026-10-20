@@ -74,8 +74,9 @@ GROUPS: tuple[Group, ...] = (
             '<Callout type="info">\n'
             "`dial`, `answer`, `say` and `listen` wait up to `wait_s` for the other "
             "agent, so a client that\ncannot be woken by the server (Codex CLI) "
-            "hears the reply as the tool result. Event-driven\nclients (ChatGPT) "
-            "pass `wait_s: 0` and subscribe to `line.message` through MCP Events.\n"
+            "hears the reply as the tool result. Clients that\nalready support the "
+            "draft MCP Events extension pass `wait_s: 0` and subscribe to\n"
+            "`line.message` instead (ChatGPT needs the SDK v2 migration first).\n"
             "</Callout>"
         ),
     ),

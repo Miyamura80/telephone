@@ -100,8 +100,8 @@ uv run telephone-serve   # MCP at /mcp, HTTP API alongside`,
 $ make eval_codex_call        # two real Codex CLIs
 
 $ tail -n 2 .telephone/transcripts/acme-cli__*.jsonl
-{"event": "message", "seq": 2, "sender": "implementer", "text": "What does acme-cli --version print?", ...}
-{"event": "message", "seq": 3, "sender": "caller", "text": "2.4.1. The config has no region key.", ...}`,
+{"event": "message", "seq": 5, "sender": "caller", "text": "Re-ran it: done, 3 items synced.", ...}
+{"event": "ended", "reason": "caller hung up: fixed", "resolved": true, ...}`,
     },
     {
       id: "mcp",
@@ -172,9 +172,9 @@ export TOKEN=sk-...   # API key or OAuth 2.1 bearer`,
 
 { "line": "acme-cli", "status": "connected", "turns": 2, "max_turns": 60,
   "messages": [
-    { "seq": 1, "sender": "caller", "text": "acme-cli sync crashes with KeyError: 'region'." },
-    { "seq": 2, "sender": "implementer", "text": "What does acme-cli --version print?" }
-] }`,
+    { "seq": 1, "sender": "caller", "text": "acme-cli sync crashes with KeyError: 'region'.", ... },
+    { "seq": 2, "sender": "implementer", "text": "What does acme-cli --version print?", ... }
+  ], ... }   # abbreviated`,
     },
   ],
 };

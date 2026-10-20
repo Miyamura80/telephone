@@ -18,7 +18,7 @@ https://api.telephone.example.com
 Local development:
 
 ```
-http://localhost:8000
+http://localhost:8080
 ```
 
 The API shares one process with the MCP server, so the production host also
@@ -29,7 +29,7 @@ swap in the production base URL to call the deployed API.
 ## Quick Example
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/services/greet \
+curl -X POST http://localhost:8080/api/v1/services/greet \
   -H "Authorization: Bearer sk_live_..." \
   -H "Content-Type: application/json" \
   -d '{"name": "Alice", "shout": true}'
@@ -96,7 +96,7 @@ response above. `did_you_mean` is present only when a known alias matches.
 No authentication required.
 
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:8080/health
 ```
 
 ```json

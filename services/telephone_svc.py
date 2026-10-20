@@ -23,6 +23,7 @@ from models.telephone import (
 )
 from services import service
 from services.switchboard import Call, switchboard
+from src.utils.cancellation import is_cancelled
 
 
 def _wait(requested: float | None) -> float:
@@ -100,6 +101,12 @@ def _view(
 def dial(input: DialInput) -> CallView:
     call, seat = switchboard.dial(input.line, input.message)
     call, role, fresh = switchboard.wait_for_peer(input.line, seat, _wait(input.wait_s))
+    if is_cancelled():
+        # Nobody will ever see this seat; free the line instead of holding it
+        # until the idle timeout.
+        call, role = switchboard.hang_up(
+            input.line, seat, "the caller left before the call connected", None
+        )
     return _view(call, role, seat, fresh)
 
 

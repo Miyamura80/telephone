@@ -24,6 +24,7 @@ import secrets
 import socket
 import threading
 import time
+from collections import deque
 from collections.abc import Callable
 from concurrent.futures import Executor, ThreadPoolExecutor
 from dataclasses import dataclass
@@ -47,8 +48,8 @@ from models.telephone_events import (
 from services.switchboard import CallEvent, Switchboard, switchboard
 
 _NEXT_STEP = (
-    "Call `listen` with this line, your seat and wait_s=0 to read new messages, "
-    "then reply with `say` using wait_s=0."
+    "The new message is in `message` above. Reply with `say` on this line with "
+    "your seat and wait_s=0. Calling `listen` would return this message again."
 )
 
 
@@ -171,6 +172,11 @@ class LineEvents:
         self._schedule = schedule
         self._lock = threading.Lock()
         self._subs: dict[str, Subscription] = {}
+        # First delivery attempts run one at a time per receiver (callback URL
+        # and seat), in the order events happened, so `line.ended` never
+        # overtakes the final `line.message`. Retries are scheduled separately.
+        self._queues: dict[tuple[str, str], deque[tuple[str, dict]]] = {}
+        self._draining: set[tuple[str, str]] = set()
         board.add_listener(self.on_event)
 
     # -- protocol surface ------------------------------------------------
@@ -223,6 +229,8 @@ class LineEvents:
         key = "|".join((owner, params.delivery.url, params.name, args.line, args.seat))
         sub_id = "sub_" + hashlib.sha256(key.encode()).hexdigest()[:24]
         now = time.time()
+        with self._lock:  # an idle server would otherwise keep expired entries
+            self._prune_expired_locked(now)
         sub = Subscription(
             id=sub_id,
             name=params.name,
@@ -260,6 +268,7 @@ class LineEvents:
         """Drop every subscription. For tests and local development only."""
         with self._lock:
             self._subs.clear()
+            self._queues.clear()
 
     # -- delivery -----------------------------------------------------------
 
@@ -267,8 +276,7 @@ class LineEvents:
         name = LINE_MESSAGE if event.kind == "message" else LINE_ENDED
         now = time.time()
         with self._lock:
-            for sub_id in [s for s, sub in self._subs.items() if sub.expires_at < now]:
-                del self._subs[sub_id]
+            self._prune_expired_locked(now)
             targets = [
                 sub
                 for sub in self._subs.values()
@@ -277,7 +285,29 @@ class LineEvents:
                 and sub.seat in event.recipient_seats
             ]
         for sub in targets:
-            self._executor.submit(self._attempt, sub.id, self._payload(name, event), 0)
+            receiver = (sub.url, sub.seat)
+            with self._lock:
+                queue = self._queues.setdefault(receiver, deque())
+                queue.append((sub.id, self._payload(name, event)))
+                start = receiver not in self._draining
+                self._draining.add(receiver)
+            if start:
+                self._executor.submit(self._drain, receiver)
+
+    def _drain(self, receiver: tuple[str, str]) -> None:
+        while True:
+            with self._lock:
+                queue = self._queues.get(receiver)
+                if not queue:
+                    self._queues.pop(receiver, None)
+                    self._draining.discard(receiver)
+                    return
+                sub_id, payload = queue.popleft()
+            self._attempt(sub_id, payload, 0)
+
+    def _prune_expired_locked(self, now: float) -> None:
+        for sub_id in [s for s, sub in self._subs.items() if sub.expires_at < now]:
+            del self._subs[sub_id]
 
     def _payload(self, name: str, event: CallEvent) -> dict:
         data: dict = {"line": event.line, "call_id": event.call_id}

@@ -28,8 +28,9 @@ their seat token on every later call.
 
 <Callout type="info">
 `dial`, `answer`, `say` and `listen` wait up to `wait_s` for the other agent, so a client that
-cannot be woken by the server (Codex CLI) hears the reply as the tool result. Event-driven
-clients (ChatGPT) pass `wait_s: 0` and subscribe to `line.message` through MCP Events.
+cannot be woken by the server (Codex CLI) hears the reply as the tool result. Clients that
+already support the draft MCP Events extension pass `wait_s: 0` and subscribe to
+`line.message` instead (ChatGPT needs the SDK v2 migration first).
 </Callout>
 
 {/* END generated */}

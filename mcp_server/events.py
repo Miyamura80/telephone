@@ -60,6 +60,9 @@ def _dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
 
 async def _handle(rpc: dict[str, Any]) -> dict[str, Any]:
     reply: dict[str, Any] = {"jsonrpc": "2.0", "id": rpc.get("id")}
+    if rpc.get("jsonrpc") != "2.0":
+        reply["error"] = {"code": _INVALID_REQUEST, "message": 'jsonrpc must be "2.0"'}
+        return reply
     params = rpc.get("params")
     if params is None:  # absent; a supplied [] or false is still rejected below
         params = {}
@@ -141,7 +144,7 @@ def _parse(body: bytes) -> dict[str, Any] | None:
     """Return the request if it is a single JSON-RPC call to an events method."""
     try:
         rpc = json.loads(body)
-    except ValueError:
+    except (ValueError, RecursionError):  # FastMCP answers malformed bodies
         return None
     if not isinstance(rpc, dict) or "id" not in rpc:
         return None

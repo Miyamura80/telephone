@@ -261,6 +261,26 @@ class TestEventsWrapperEdges(TestTemplate):
         # FastMCP answers the malformed request; the wrapper does not crash.
         assert resp.status_code < 500
 
+    def test_deeply_nested_body_passes_through(self, server):
+        base, key = server
+        resp = httpx.post(
+            f"{base}/mcp",
+            headers={"X-API-KEY": key, "content-type": "application/json"},
+            content=b"[" * 100_000,
+            timeout=10,
+        )
+        assert resp.status_code < 500
+
+    def test_events_call_without_jsonrpc_version_is_rejected(self, server):
+        base, key = server
+        resp = httpx.post(
+            f"{base}/mcp",
+            headers={"X-API-KEY": key, "Accept": "application/json, text/event-stream"},
+            json={"id": 3, "method": "events/list", "params": {}},
+            timeout=10,
+        )
+        assert resp.json()["error"]["code"] == -32600
+
 
 def _rpc(base: str, key: str, method: str, params: dict) -> dict:
     resp = httpx.post(

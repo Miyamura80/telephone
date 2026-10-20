@@ -56,6 +56,15 @@ agents must reach the same server. Per-call JSONL transcripts are written to
 
 ### Connect Codex CLI
 
+Create an API key for the agents (see
+[Authentication](/docs/api/authentication#create-a-key)) and export it
+in each shell that launches Codex, since `env_http_headers` reads the header
+value from that variable:
+
+```bash
+export TELEPHONE_API_KEY=sk_live_...
+```
+
 ```toml
 # ~/.codex/config.toml (local server from the previous step; use your
 # deployment's https URL once it is hosted)
@@ -76,9 +85,9 @@ tool_timeout_sec = 600
 
 Tell one agent to `dial` a line (for example `bug-123`) with a description of
 its problem, and the other to `answer` the same line. Each gets a `seat` token
-to pass on every later call. The conversation runs until the caller calls
-`hang_up` with `resolved: true` or `false`, or the call hits `max_turns` (60
-messages) or `idle_timeout_s` (900s). See [Tools](/docs/mcp/tools) for every
+to pass on every later call. Either agent can `hang_up` to end the call; only
+the caller's `resolved: true` or `false` is recorded. The call also ends on its
+own at `max_turns` (60 messages) or after `idle_timeout_s` (900s) of silence. See [Tools](/docs/mcp/tools) for every
 argument and outcome.
 
 </Step>

@@ -3,7 +3,8 @@
 import base64
 import json
 import socket
-from concurrent.futures import Executor, Future
+import time
+from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from unittest.mock import patch
 
 import pytest
@@ -206,6 +207,50 @@ class TestLineEvents(TestTemplate):
         ):
             events.subscribe(params, owner="u1")
         assert list(events._subs) == [sub.id]
+
+    def test_line_ended_never_overtakes_the_last_message(self):
+        board = Switchboard()
+        order: list[str] = []
+
+        def sender(url, body, headers):
+            name = json.loads(body)["name"]
+            if name == "line.message":
+                time.sleep(0.2)  # a slow first delivery
+            order.append(name)
+            return 200
+
+        pool = ThreadPoolExecutor(max_workers=4)
+        events = LineEvents(board, sender=sender, executor=pool)
+        _, caller = board.dial("ord", "help")
+        for name in ("line.message", "line.ended"):
+            events.subscribe(
+                SubscribeParams.model_validate(
+                    {
+                        "name": name,
+                        "arguments": {"line": "ord", "seat": caller},
+                        "delivery": {"url": "http://localhost/h", "secret": SECRET},
+                    }
+                ),
+                owner="u1",
+            )
+        claimed = board.answer("ord", wait_s=0)
+        assert claimed is not None
+        board.say("ord", claimed[1], "last words")
+        board.hang_up("ord", claimed[1], "done", None)
+        pool.shutdown(wait=True)
+        assert order == ["line.message", "line.ended"]
+
+    def test_short_ttl_is_rejected_and_secret_is_hidden(self):
+        params = {
+            "name": "line.message",
+            "arguments": {"line": "ev", "seat": "s"},
+            "delivery": {"url": "http://localhost/h", "secret": SECRET},
+        }
+        with pytest.raises(ValueError):
+            SubscribeParams.model_validate({**params, "ttlMs": 1000})
+        with pytest.raises(ValueError):
+            SubscribeParams.model_validate({**params, "ttlMs": 10**400})
+        assert SECRET not in repr(SubscribeParams.model_validate(params))
 
     def test_unsubscribe_requires_the_owner(self):
         _, events, sub, _, _, _ = _setup([])

@@ -1,20 +1,20 @@
 ---
 title: Telephone
-description: Una centralita MCP que permite a dos agentes de IA mantener una conversacion bidireccional sin ninguna persona de por medio.
+description: Una centralita MCP que permite a dos agentes de IA mantener una conversación bidireccional sin ninguna persona de por medio.
 ---
 
 import { Terminal, Bot, Globe, Rocket, Ship } from 'lucide-react';
 
 Telephone es un servidor MCP que funciona como centralita. Dos clientes MCP (por
-ejemplo, dos instancias de Codex CLI, o ChatGPT y Codex) se conectan a el, y
-Telephone transmite una conversacion bidireccional entre ambos sin que nadie
+ejemplo, dos instancias de Codex CLI, o ChatGPT y Codex) se conectan a él, y
+Telephone transmite una conversación bidireccional entre ambos sin que nadie
 tenga que copiar y pegar mensajes. Un solo servidor aloja muchas **lines**
-(lineas) con nombre, asi que pueden coexistir varias llamadas.
+(líneas) con nombre, así que pueden coexistir varias llamadas.
 
 <Callout type="info" title="Estado">
-Esta version solo renombra y reinicializa el proyecto. Las herramientas de
+Esta versión solo renombra y reinicializa el proyecto. Las herramientas de
 llamada (`dial`, `answer`, `say`, `listen`, `get_messages`, `hang_up`) llegan en
-la proxima version, por lo que la superficie de herramientas MCP esta vacia por
+la próxima versión, por lo que la superficie de herramientas MCP está vacía por
 ahora. Consulta
 [Coming next: call tools](/docs/mcp/tools#coming-next-call-tools-planned).
 </Callout>
@@ -23,16 +23,16 @@ ahora. Consulta
 
 Un agente **caller** (quien llama) usa una herramienta CLI y encuentra un bug.
 No puede modificar la herramienta, pero un agente **implementer** (quien
-implementa) en otro lugar tiene el codigo fuente. En lugar de que una persona
+implementa) en otro lugar tiene el código fuente. En lugar de que una persona
 pase los mensajes entre ellos:
 
-1. El caller hace `dial` a una linea y describe el fallo.
-2. El implementer responde con `answer` y hace preguntas de diagnostico con `say` (que flags, que version, el error completo).
+1. El caller hace `dial` a una línea y describe el fallo.
+2. El implementer responde con `answer` y hace preguntas de diagnóstico con `say` (qué flags, qué versión, el error completo).
 3. El caller responde cada pregunta desde su propio entorno.
 4. El implementer corrige el bug y le pide al caller que vuelva a intentarlo.
-5. El caller confirma la correccion, y cualquiera de los dos puede hacer `hang_up`.
+5. El caller confirma la corrección, y cualquiera de los dos puede hacer `hang_up`.
 
-## Como funciona
+## Cómo funciona
 
 ```text
   caller agent                  Telephone                  implementer agent
@@ -48,15 +48,15 @@ pase los mensajes entre ellos:
                   speaks                        client
 ```
 
-Cada lado necesita saber cuando ha hablado el otro, y Telephone ofrece dos modos
+Cada lado necesita saber cuándo ha hablado el otro, y Telephone ofrece dos modos
 de entrega para ello:
 
 - **Long-poll** para CLIs de agentes como Codex: `say` y `listen` mantienen
   abierta la llamada a la herramienta en el servidor y regresan en cuanto el otro
-  lado habla, asi el agente sigue en la linea dentro de su propio bucle de
+  lado habla, así el agente sigue en la línea dentro de su propio bucle de
   herramientas.
-- **MCP Events** para ChatGPT: el servidor envia un webhook firmado que despierta
-  al cliente cuando llega un mensaje (especificacion en borrador).
+- **MCP Events** para ChatGPT: el servidor envía un webhook firmado que despierta
+  al cliente cuando llega un mensaje (especificación en borrador).
 
 Debajo de la centralita hay un registro de servicios compartido expuesto de tres
 formas: una CLI (`telephone`), el endpoint MCP (streamable HTTP en `/mcp`) y una
@@ -65,7 +65,7 @@ API REST autenticada.
 <Cards>
   <Card
     icon={<Rocket />}
-    title="Inicio Rapido"
+    title="Inicio Rápido"
     href="/docs/quickstart"
     description="Instala Telephone y ejecuta tu primer comando en menos de un minuto."
   />
@@ -107,6 +107,6 @@ API REST autenticada.
 
 ## Licencia y precios
 
-Telephone es open source bajo la [licencia MIT](https://github.com/Miyamura80/telephone/blob/main/LICENSE): puedes usarlo, modificarlo y alojarlo tu mismo para siempre, **sin cuota de instalacion ni coste de licencia**. El servidor completo se ejecuta en tu propia infraestructura.
+Telephone es open source bajo la [licencia MIT](https://github.com/Miyamura80/telephone/blob/main/LICENSE): puedes usarlo, modificarlo y alojarlo tú mismo para siempre, **sin cuota de instalación ni coste de licencia**. El servidor completo se ejecuta en tu propia infraestructura.
 
-El alojamiento gestionado y el soporte para equipos estan disponibles como planes de pago opcionales (despliegue alojado, monitorizacion, SSO/registros de auditoria, SLA y licencias comerciales/OEM). El detalle completo esta en la pagina del producto, con un manifiesto legible por maquinas en `/pricing.md` para agentes que comparan opciones.
+El alojamiento gestionado y el soporte para equipos están disponibles como planes de pago opcionales (despliegue alojado, monitorización, SSO/registros de auditoria, SLA y licencias comerciales/OEM). El detalle completo está en la página del producto, con un manifiesto legible por máquinas en `/pricing.md` para agentes que comparan opciones.

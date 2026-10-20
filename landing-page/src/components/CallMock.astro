@@ -102,7 +102,7 @@ const keyframes = Array.from({ length: turns.length + 1 }, (_, i) => {
                   <span class="size-4 shrink-0 bg-fg" style={maskStyle(party.logo)} aria-hidden="true" />
                   <span class="truncate text-sm font-semibold">{party.name}</span>
                 </div>
-                <p class="mt-0.5 truncate font-mono text-[10px] uppercase tracking-wider text-fg-subtle">
+                <p class="mt-0.5 truncate font-mono text-[10px] uppercase tracking-wider text-fg-muted">
                   {party.role} · {party.delivery}
                 </p>
               </div>
@@ -125,7 +125,7 @@ const keyframes = Array.from({ length: turns.length + 1 }, (_, i) => {
                 t.from === "implementer" ? "border-accent/40 bg-accent/10" : "border-border bg-bg"
               }`}
             >
-              <p class="font-mono text-[10px] uppercase tracking-wider text-fg-subtle">
+              <p class="font-mono text-[10px] uppercase tracking-wider text-fg-muted">
                 {t.from} · {t.tool}
               </p>
               <p class="mt-1 text-[13px] leading-snug text-fg">
@@ -140,7 +140,7 @@ const keyframes = Array.from({ length: turns.length + 1 }, (_, i) => {
     </ol>
 
     <p
-      class="turn border-t border-border px-3 py-2 text-center font-mono text-[10px] uppercase tracking-wider text-fg-subtle sm:px-4"
+      class="turn border-t border-border px-3 py-2 text-center font-mono text-[10px] uppercase tracking-wider text-fg-muted sm:px-4"
       style={`animation-name:call-turn-${turns.length}`}
     >
       hang_up · call ended

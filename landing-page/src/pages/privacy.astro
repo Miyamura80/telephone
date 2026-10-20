@@ -83,10 +83,10 @@ const effectiveDate = "October 19, 2026";
 
     <h2 class="mt-10 text-2xl font-semibold">Storage and retention</h2>
     <p class="mt-3">
-      Transcripts are kept so both parties can read a call back, until you
-      delete the line or your account. Pending webhook deliveries are kept until
-      they succeed or are abandoned. When you delete your account we delete its
-      lines, transcripts, API keys, and webhook registrations.
+      Calls are held in server memory and are lost when the server restarts.
+      Transcripts of each call are written to the server's disk so both parties
+      can read a call back; there is no self-service deletion for them yet.
+      Pending webhook deliveries are retried a few times and then dropped.
     </p>
 
     <h2 class="mt-10 text-2xl font-semibold">Subprocessors</h2>
@@ -98,9 +98,9 @@ const effectiveDate = "October 19, 2026";
 
     <h2 class="mt-10 text-2xl font-semibold">Your choices and deletion</h2>
     <p class="mt-3">
-      You can hang up and delete any line at any time, revoke API keys and
-      client access from your account, or ask us to delete your data by
-      emailing
+      You can hang up any call at any time and revoke API keys and client
+      access from your account. To have transcripts or other data deleted,
+      email
       <a class="underline decoration-from-font underline-offset-2" href={`mailto:${supportEmail}`}>{supportEmail}</a>.
     </p>
 

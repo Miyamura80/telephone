@@ -1,58 +1,101 @@
 ---
-title: 快速入门
-description: 开始使用 MCP 模板
+title: Telephone
+description: 一个 MCP 交换机，让两个 AI 代理在无人介入的情况下进行双向对话。
 ---
 
-MCP Template 提供三种方式与同一组工具进行交互:
+import { Terminal, Bot, Globe, Rocket, Ship } from 'lucide-react';
 
-- **CLI** - 在终端中运行命令
-- **MCP** - 直接连接 Claude 等 AI 助手
-- **REST API** - 通过 HTTP 调用带认证的端点
+Telephone 是一个充当交换机的 MCP 服务器。两个 MCP 客户端（例如两个 Codex CLI
+实例，或 ChatGPT 与 Codex）连接到它，由它在两者之间转发双向对话，中间不需要人工复制粘贴。
+一个服务器可以承载多条具名的 **line（线路）**，因此可以同时进行多个通话。
 
-选择适合你工作流的接口，或三种都用。
+<Callout type="info" title="状态">
+本次发布只是项目的重命名与重新初始化。通话工具（`dial`、`answer`、`say`、`listen`、
+`get_messages`、`hang_up`）将在下一个版本中上线，因此目前 MCP 工具列表为空。参见
+[Coming next: call tools](/docs/mcp/tools#coming-next-call-tools-planned)。
+</Callout>
 
-## 安装
+## 示例：代理之间的 bug 报告
 
-import { Step, Steps } from 'fumadocs-ui/components/steps';
+一个 **caller（呼叫方）** 代理在使用某个 CLI 工具时遇到 bug。它无法修改该工具，
+但另一处的 **implementer（实现方）** 代理拥有该工具的代码库。无需人工在两者之间传话：
 
-<Steps>
-<Step>
+1. 呼叫方通过 `dial` 拨通一条线路，并描述故障。
+2. 实现方 `answer` 接听，然后用 `say` 提出诊断问题（使用了哪些参数、哪个版本、完整的错误信息）。
+3. 呼叫方在自己的环境中逐一回答。
+4. 实现方修复 bug，并请呼叫方重试。
+5. 呼叫方确认修复成功，任意一方都可以 `hang_up` 挂断。
 
-### 从源码安装
+## 工作原理
 
-```bash
-git clone https://github.com/Miyamura80/MCP-Template.git
-cd MCP-Template
-uv sync
+```text
+  caller agent                  Telephone                  implementer agent
+  (Codex CLI)                 (one server)                 (ChatGPT or Codex)
+ +-------------+           +-----------------+           +------------------+
+ |             |  MCP      |  line "bug-123" |   MCP     |                  |
+ |  say/listen |---------->|  +-----------+  |<----------| answer/say       |
+ |             |<----------|  | transcript|  |---------->|                  |
+ +-------------+  held     |  +-----------+  |  signed   +------------------+
+                  open     |  line "deploy"  |  webhook
+                  until    |  line ...       |  (MCP Events)
+                  peer     +-----------------+  wakes the
+                  speaks                        client
 ```
 
-</Step>
-<Step>
+每一方都需要知道对方何时发言，Telephone 为此提供两种投递方式：
 
-### 验证安装
+- **长轮询（Long-poll）**，适用于 Codex 等代理 CLI：`say` 和 `listen` 会在服务器端保持工具调用，
+  一旦对方发言就立即返回，因此代理始终在自己的工具循环中"保持通话"。
+- **MCP Events**，适用于 ChatGPT：有新消息时，服务器发送带签名的 webhook 唤醒客户端（草案规范）。
 
-```bash
-uv run mymcp --version
-uv run mymcp --help
-```
+在交换机之下是一个共享的服务注册表，以三种方式对外提供：CLI（`telephone`）、
+MCP 端点（`/mcp` 上的 streamable HTTP），以及带认证的 REST API。
 
-</Step>
-<Step>
-
-### 尝试一个命令
-
-```bash
-uv run mymcp greet Alice
-# Hello, Alice!
-```
-
-</Step>
-</Steps>
+<Cards>
+  <Card
+    icon={<Rocket />}
+    title="快速入门"
+    href="/docs/quickstart"
+    description="一分钟内安装 Telephone 并运行第一条命令。"
+  />
+</Cards>
 
 ## 选择你的接口
 
 <Cards>
-  <Card title="CLI" href="/docs/cli" />
-  <Card title="MCP Server" href="/docs/mcp" />
-  <Card title="REST API" href="/docs/api" />
+  <Card
+    icon={<Bot />}
+    title="MCP Server"
+    href="/docs/mcp"
+    description="连接 Codex、ChatGPT、Claude 等 MCP 客户端。"
+  />
+  <Card
+    icon={<Terminal />}
+    title="CLI"
+    href="/docs/cli"
+    description="使用 telephone 命令在终端中运行命令。"
+  />
+  <Card
+    icon={<Globe />}
+    title="REST API"
+    href="/docs/api"
+    description="从任意客户端调用带认证的 HTTP 端点。"
+  />
 </Cards>
+
+## 部署
+
+<Cards>
+  <Card
+    icon={<Ship />}
+    title="部署"
+    href="/docs/deployment"
+    description="在你自己的基础设施上运行完整的服务器。"
+  />
+</Cards>
+
+## 许可与定价
+
+Telephone 基于 [MIT 许可证](https://github.com/Miyamura80/telephone/blob/main/LICENSE) 开源，可永久免费使用、修改和自托管，**无安装费、无许可费**。完整的服务器运行在你自己的基础设施上。
+
+可选的托管服务和团队支持以付费套餐形式提供（托管部署、监控、SSO/审计日志、SLA 以及商业/OEM 许可）。完整说明见产品落地页，供代理比较选项的机器可读清单位于 `/pricing.md`。

@@ -11,7 +11,6 @@
 import { getStarted } from "../config/landing";
 import CodeBlock from "./CodeBlock.astro";
 import ConnectWidget from "./ConnectWidget.astro";
-import ChatGptShell from "./chat/ChatGptShell.astro";
 
 const { heading, subhead, defaultId, transports } = getStarted;
 
@@ -95,11 +94,11 @@ const mask = (icon: string) =>
                 <p class="mt-3 text-pretty leading-relaxed text-fg-muted">{t.callBody}</p>
                 {t.callVariants ? (
                   <div class="mt-5 min-w-0" data-call-variants>
-                    {/* Headless vs. interactive sub-toggle */}
+                    {/* Per-client delivery sub-toggle */}
                     <div
                       class="inline-flex border-2 border-border bg-surface-1"
                       role="tablist"
-                      aria-label="Tool style"
+                      aria-label="Client"
                     >
                       {t.callVariants.map((v, i) => (
                         <button
@@ -119,19 +118,7 @@ const mask = (icon: string) =>
                           {v.body}
                         </p>
                         <div class="mt-4">
-                          {v.kind === "app" ? (
-                            <div>
-                              <div class="mb-3 flex items-center gap-2">
-                                <span class="size-1.5 rounded-full bg-accent" />
-                                <span class="font-mono text-[10px] uppercase tracking-wider text-fg-subtle">
-                                  rendered inline in your client
-                                </span>
-                              </div>
-                              <ChatGptShell />
-                            </div>
-                          ) : (
-                            <CodeBlock code={v.code ?? ""} lang={v.lang} />
-                          )}
+                          <CodeBlock code={v.code} lang={v.lang} />
                         </div>
                       </div>
                     ))}
@@ -168,7 +155,7 @@ const mask = (icon: string) =>
         });
       });
 
-      // Sub-toggle: headless vs. interactive within a "call a tool" step.
+      // Sub-toggle: per-client variants within a "call a tool" step.
       root.querySelectorAll<HTMLElement>("[data-call-variants]").forEach((group) => {
         const vTabs = group.querySelectorAll<HTMLButtonElement>(".call-variant-tab");
         const panels = group.querySelectorAll<HTMLElement>("[data-call-variant-panel]");

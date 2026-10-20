@@ -45,10 +45,7 @@ help: ## Show this help message
 ########################################################
 
 ### Initialization
-.PHONY: onboard banner logo
-onboard: check_uv ## Run onboarding CLI (PROFILE=cli-only, CONFIG=.onboard.yaml, ARGS="--dry-run")
-	@$(PYTHON) -m init.onboard $(if $(PROFILE),--profile $(PROFILE),) $(if $(CONFIG),--config $(CONFIG),) $(if $(DRY_RUN),--dry-run,) $(ARGS)
-
+.PHONY: banner logo
 banner: check_uv ## Generate project banner image
 	@echo "$(YELLOW)🔍Generating banner...$(RESET)"
 	@uv run python -m init.generate_banner
@@ -127,10 +124,10 @@ docs: ## Run docs with bun
 
 api: check_uv ## Run authenticated API server
 	@echo "$(GREEN)🌐 Starting API server...$(RESET)"
-	@$(PYTHON) mymcp-serve
+	@$(PYTHON) telephone-serve
 
 mcp: check_uv ## Run MCP server locally (stdio)
-	@$(PYTHON) mymcp-mcp
+	@$(PYTHON) telephone-mcp
 
 mcp_inspect: check_uv ## Run MCP server with inspector for debugging
 	@$(PYTHON) mcp dev mcp_server/server.py
@@ -151,33 +148,11 @@ dev_host: ## Run upstream @modelcontextprotocol/ext-apps basic-host for manual s
 	@if [ ! -d /tmp/ext-apps ]; then git clone --depth 1 https://github.com/modelcontextprotocol/ext-apps.git /tmp/ext-apps; fi
 	@cd /tmp/ext-apps/examples/basic-host && bun install --silent && bun start
 
-.PHONY: preview_app preview_smoke
-APP ?= gmail_inbox
-preview_app: ## Build a standalone fixture-driven preview of an MCP App (APP=gmail_inbox)
-	@command -v bun >/dev/null 2>&1 || { echo "$(RED)bun is not installed. Install from https://bun.sh$(RESET)"; exit 1; }
-	@echo "$(YELLOW)🖼  Building $(APP) fixture preview...$(RESET)"
-	@cd mcp_server/dev_preview && bun install --silent && APP=$(APP) bun run build.mjs
-
-preview_smoke: ## Headless Playwright check that an MCP App renders from fixtures (APP=gmail_inbox)
-	@command -v bun >/dev/null 2>&1 || { echo "$(RED)bun is not installed. Install from https://bun.sh$(RESET)"; exit 1; }
-	@echo "$(YELLOW)🧪 Smoke-testing $(APP) fixture preview...$(RESET)"
-	@cd mcp_server/dev_preview && bun install --silent && APP=$(APP) bun run smoke.mjs
-
-mcp_conformance: check_uv ## Run MCPJam apps + protocol conformance against the local /mcp server (requires node)
+mcp_conformance: check_uv ## Run MCPJam protocol conformance against the local /mcp server (requires node)
 	@command -v npx >/dev/null 2>&1 || { echo "$(RED)npx (Node.js) is not installed. Install from https://nodejs.org$(RESET)"; exit 1; }
 	@echo "$(YELLOW)🔌 Running MCPJam conformance...$(RESET)"
 	@uv run python scripts/mcp_conformance.py
 	@echo "$(GREEN)✅ MCP conformance passed.$(RESET)"
-
-GOOSE_E2E := .agents/skills/goose-gui-e2e/scripts
-test_apps_e2e: ## L4 MCP-App e2e: drive the real Goose desktop GUI as an MCP client (needs one-time setup; NOT in make ci)
-	@test -x "$$HOME/goose-e2e/goose_src/target/debug/goose" || { \
-		echo "$(YELLOW)⚠️  Goose not built yet. Run once: bash $(GOOSE_E2E)/setup.sh$(RESET)"; \
-		echo "$(YELLOW)   (needs registry.npmmirror.com on the network allowlist; ~6-8 min)$(RESET)"; exit 1; }
-	@echo "$(YELLOW)🪿 Running Goose-GUI MCP-App e2e (real Electron host)...$(RESET)"
-	@bash $(GOOSE_E2E)/up.sh
-	@bash $(GOOSE_E2E)/run_all.sh
-	@echo "$(GREEN)✅ MCP-App e2e passed.$(RESET)"
 
 gen_tool_surface: check_uv ## Snapshot the @service registry to the landing-page tool-surface JSON
 	@echo "$(YELLOW)🛠  Exporting tool surface...$(RESET)"

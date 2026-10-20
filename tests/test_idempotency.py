@@ -33,34 +33,6 @@ EXPECTED_MUTATING_SERVICES = frozenset(
         "config_set",
         # doctor (fixer path only; plain `doctor` stays a pure read)
         "doctor_fix",
-        # gmail account + watch
-        "gmail_disconnect",
-        "gmail_watch_start",
-        "gmail_watch_stop",
-        # gmail drafts + attachments
-        "gmail_compose",
-        "gmail_update_draft",
-        "gmail_discard_draft",
-        "gmail_send",
-        "gmail_reply_to_thread",
-        "gmail_add_attachment",
-        "gmail_remove_attachment",
-        # gmail thread label writes (+ curation ledger)
-        "gmail_mark_thread_read",
-        "gmail_archive_thread",
-        "gmail_mark_thread_done",
-        "gmail_unmark_thread_done",
-        # inbox curation ledger
-        "inbox_save_curation",
-        # pdf documents
-        "pdf_open",
-        "pdf_edit",
-        "pdf_request_signature",
-        "pdf_export",
-        # webhooks
-        "webhook_subscribe",
-        "webhook_unsubscribe",
-        "webhook_rotate_secret",
     }
 )
 

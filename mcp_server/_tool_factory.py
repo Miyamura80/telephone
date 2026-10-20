@@ -261,7 +261,7 @@ def _recover_from_enhancer_crash(
 
     - If the enhancer's last ``tool.call()`` completed, reuse that stashed
       result - re-invoking the service would duplicate side effects for
-      mutating services (e.g. a second Gmail draft or a double charge).
+      mutating services (e.g. a second message or a double charge).
     - If there is no completed result and the service is ``mutating``,
       propagate the enhancer error instead of silently re-executing.
     - Otherwise (non-mutating, never completed) retry headless via

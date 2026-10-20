@@ -77,6 +77,6 @@ async def generate_banner(title: str, theme: str | None = None) -> Image.Image:
 
 
 if __name__ == "__main__":
-    title = "Python-Template"
+    title = "telephone"
     theme = "use a snake in the image"
     asyncio.run(generate_banner(title, theme))

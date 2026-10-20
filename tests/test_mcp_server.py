@@ -39,61 +39,6 @@ class TestMCPServer(TestTemplate):
         for tool_name in ("config_get", "config_set", "config_show", "doctor", "greet"):
             assert tool_name not in tools
 
-    def test_enhanced_tools_publish_output_schema(self):
-        for tool_name in ("gmail_compose", "gmail_curate_inbox", "gmail_get_thread"):
-            tool = mcp._tool_manager._tools.get(tool_name)
-            assert tool is not None, f"{tool_name} not registered"
-            assert tool.output_schema is not None, f"{tool_name} missing outputSchema"
-
-    def test_enhanced_output_schema_matches_output_model(self):
-        # _patch_output_schema writes into FastMCP's private registry; assert
-        # the published schema is byte-for-byte the service output model's
-        # schema, not just non-None, so an SDK upgrade that breaks the patch
-        # path fails loudly here.
-        by_name = {e.name: e for e in get_registry()}
-        for tool_name in ("gmail_compose", "gmail_curate_inbox", "gmail_get_thread"):
-            tool = mcp._tool_manager._tools[tool_name]
-            output_model = by_name[tool_name].output_model
-            assert issubclass(output_model, BaseModel)
-            expected = output_model.model_json_schema()
-            assert tool.output_schema == expected, (
-                f"{tool_name} outputSchema diverged from its output_model"
-            )
-
-    def test_app_rendering_tools_declare_ui_resource_in_tools_list(self):
-        # Per the MCP Apps spec, tools that render an app must advertise the
-        # ui:// resource in their tools/list _meta so hosts can pre-fetch the
-        # HTML and apply CSP before the first call (found by MCPJam's
-        # `apps conformance` check).
-        app_tools = {
-            "gmail_compose",
-            "gmail_update_draft",
-            "gmail_reply_to_thread",
-            "gmail_curate_inbox",
-            "gmail_get_thread",
-        }
-        tools = {t.name: t for t in asyncio.run(mcp.list_tools())}
-        for name in app_tools:
-            meta = tools[name].meta
-            assert meta is not None, f"{name} missing _meta"
-            uri = meta["ui"]["resourceUri"]
-            assert uri.startswith("ui://mymcp/"), f"{name} bad resourceUri: {uri}"
-            # Deprecated flat key kept for legacy host compat.
-            assert meta["ui/resourceUri"] == uri
-
-        # Headless tools must not grow UI metadata.
-        assert tools["gmail_send"].meta is None
-        # App-only companion tools keep visibility-only metadata.
-        assert tools["gmail_inbox.refresh"].meta == {"ui": {"visibility": ["app"]}}
-
-    def test_enhanced_tools_do_not_publish_context_as_input(self):
-        for tool_name in ("gmail_compose", "gmail_curate_inbox", "gmail_get_thread"):
-            tool = mcp._tool_manager._tools.get(tool_name)
-            assert tool is not None, f"{tool_name} not registered"
-            assert tool.context_kwarg == "ctx"
-            assert "ctx" not in tool.parameters.get("properties", {})
-            assert "ctx" not in tool.parameters.get("required", [])
-
     def test_default_factory_fields_resolve_to_concrete_defaults(self):
         # Regression: inspect.signature() renders a Pydantic default_factory
         # field with the private <factory> sentinel. FastMCP copies each
@@ -110,21 +55,6 @@ class TestMCPServer(TestTemplate):
                     f"{tool_name}.{name} leaks the default_factory sentinel "
                     f"into its tool schema: {default_repr}"
                 )
-
-    def test_reply_to_thread_attachments_optional_without_factory_sentinel(self):
-        # Concrete end-to-end guard for the reported gmail_reply_to_thread bug:
-        # validating the tool's argument model with attachments omitted must
-        # yield a real empty list, and building the service input from it must
-        # not raise.
-        from services.gmail_drafts_svc import GmailReplyInput  # noqa: PLC0415
-
-        arg_model = mcp._tool_manager._tools[
-            "gmail_reply_to_thread"
-        ].fn_metadata.arg_model
-        validated = arg_model.model_validate({"thread_id": "t1"}).model_dump()
-        assert validated["attachments"] == []
-        # Downstream construction that previously raised the validation error.
-        assert GmailReplyInput(**validated).attachments == []
 
     def test_resolve_signature_default_covers_all_factory_forms(self):
         # Unit-covers _resolve_signature_default across every branch, including
@@ -163,36 +93,20 @@ class TestMCPServer(TestTemplate):
 class TestMCPServerIntegration(TestTemplate):
     """End-to-end integration tests calling tools through the registered FastMCP wrapper."""
 
-    def test_app_resources_registered_and_serve_html(self):
-        resources = asyncio.run(mcp.list_resources())
-        uris = {str(r.uri) for r in resources}
-        # gmail_composer / gmail_inbox apps are added in later phases; here we
-        # only assert that whatever ui:// resources are registered serve HTML.
-        ui_uris = [u for u in uris if u.startswith("ui://mymcp/")]
-        assert ui_uris, "expected at least one ui://mymcp/ resource registered"
-        for uri in ui_uris:
-            contents = list(asyncio.run(mcp.read_resource(uri)))
-            assert len(contents) == 1
-            text = str(contents[0].content)
-            assert text.lstrip().lower().startswith("<!doctype html>")
-
     def test_missing_app_build_serves_stub_comment(self):
         # Edge case A1 (mcp_server/MCP_UI_EDGE_CASES.md): an app dir without a
         # built dist/mcp-app.html must serve an HTML comment stub, not crash.
         test_mcp = FastMCP("test_stub")
         missing = Path("/nonexistent/test_app/dist/mcp-app.html")
         _register_app_resource(
-            test_mcp, "ui://mymcp/test_stub_app", missing, "test_stub_app"
+            test_mcp, "ui://telephone/test_stub_app", missing, "test_stub_app"
         )
 
-        contents = list(asyncio.run(test_mcp.read_resource("ui://mymcp/test_stub_app")))
+        contents = list(
+            asyncio.run(test_mcp.read_resource("ui://telephone/test_stub_app"))
+        )
         assert len(contents) == 1
         text = str(contents[0].content)
         assert text.startswith("<!--")
         assert "test_stub_app not built" in text
         assert "make build_apps" in text
-
-    def test_model_visible_focus_tool_returns_pydantic_model_directly(self):
-        tool_fn = mcp._tool_manager._tools["gmail_get_focused_email"].fn
-        result = tool_fn(user_id="test-user")
-        assert result.focused is False

@@ -64,22 +64,16 @@ mcp_server/
     __init__.py          # @enhance, EnhancedTool, registry
     base.py              # EnhancedTool class
     schemas.py           # Elicitation Pydantic models
-    gmail.py             # Example: app attachment for compose / curate_inbox / update_draft
     config.py            # Example: image output
   app_tools/
-    gmail_composer.py    # App-only tools (visibility: ["app"]) for the composer iframe
-    gmail_inbox.py       # App-only tools for the inbox reader iframe
+    _auth_guard.py       # Shared scope/quota guard for app-only tools
+    <app>.py             # App-only tools (visibility: ["app"]) for an iframe
   apps/
-    gmail_composer/
-      src/Composer.tsx    # React thin rendering layer (draft editor)
+    <app>/               # None ship today; add one per this layout
+      src/App.tsx         # React thin rendering layer
       vite.config.ts
       package.json
       dist/mcp-app.html   # Built artifact (committed)
-    gmail_inbox/
-      src/Inbox.tsx       # React thin rendering layer (thread list + reader)
-      vite.config.ts
-      package.json
-      dist/mcp-app.html
 ```
 
 **Why:** Driven by the need to support MCP UI features (elicitation at limited-but-growing client adoption, MCP Apps shipping since late 2025) without breaking the template's pure-function service architecture. The enhancer pattern lets MCP-specific UI be opt-in per-tool while keeping CLI/API consumers unaffected.

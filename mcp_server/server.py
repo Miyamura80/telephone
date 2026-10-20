@@ -7,7 +7,7 @@ Two registration paths (see `_tool_factory.py` for details):
   user input, attach images/audio, or render an MCP App (iframe dashboard).
 
 Primary transport is streamable HTTP, mounted on the FastAPI app at ``/mcp``
-(see ``api_server/server.py``). Stdio is supported via the ``mymcp-mcp``
+(see ``api_server/server.py``). Stdio is supported via the ``telephone-mcp``
 console script for local dev / Claude Desktop only.
 
 See ``mcp_server/MCP_UI_ARCHITECTURE.md`` and ``mcp_server/MCP_UI_EDGE_CASES.md``.
@@ -33,17 +33,8 @@ _APP_MIME_TYPE = "text/html;profile=mcp-app"
 # Module-level singleton: app_tools / enhancers may import this at module-load
 # time (e.g. ``@mcp.tool``), so it must exist before discovery runs.
 _MCP_INSTRUCTIONS = (
-    "When the user asks to draft, edit, reply to, or compose an email, "
-    "ALWAYS use the gmail_reply_to_thread, gmail_compose, or gmail_update_draft tools. "
-    "NEVER write email draft text as plain chat text - the tools render an interactive "
-    "composer UI where the user can review, edit, and send. "
-    "Pass your composed text in the tool's 'body' parameter and keep your chat response "
-    "to one brief sentence. "
-    "For PDF attachments: fill forms with pdf_open + pdf_edit, then hand off with "
-    "pdf_request_signature - signing is done by the USER typing their own name in "
-    "the signing UI. Never type a signature value into a form field on the user's "
-    "behalf, and never treat a document as signed until the user completes the "
-    "ceremony. Deliver the result with pdf_export."
+    "Telephone lets AI agents place calls to each other over MCP. "
+    "Tools for dialing and talking on a line are added as the switchboard grows."
 )
 
 
@@ -114,7 +105,7 @@ def _transport_security() -> TransportSecuritySettings:
 # having DECLARED the capability: under stateless HTTP ``client_params`` is
 # never populated, the check correctly returns False, and the enhancers take
 # their non-elicitation fallbacks. Deployments that want host-native
-# elicitation (e.g. the PDF signing confirmation dialog) must run a single
+# elicitation must run a single
 # replica and set ``server.mcp_stateless_http: false``.
 #
 # Stateless is also where the spec is going: the MCP core is dropping session
@@ -126,7 +117,7 @@ def _transport_security() -> TransportSecuritySettings:
 # per-session state, which is what actually fixes the error - and it's
 # forward-compatible with the RC.
 mcp: FastMCP = FastMCP(
-    "mymcp",
+    "telephone",
     instructions=_MCP_INSTRUCTIONS,
     transport_security=_transport_security(),
     stateless_http=global_config.server.mcp_stateless_http,
@@ -198,7 +189,7 @@ def _register_app_resources(mcp: FastMCP) -> None:
         if not app_dir.is_dir():
             continue
         html_path = app_dir / "dist" / "mcp-app.html"
-        uri = f"ui://mymcp/{app_dir.name}"
+        uri = f"ui://telephone/{app_dir.name}"
         _register_app_resource(mcp, uri, html_path, app_dir.name)
 
 
@@ -254,8 +245,8 @@ async def lifespan(_app):
 def main() -> None:
     """Run the MCP server on stdio transport (legacy / local-dev only)."""
     print(
-        "[mymcp-mcp] stdio transport is legacy; "
-        "prefer `mymcp-serve` and connect via streamable HTTP at /mcp.",
+        "[telephone-mcp] stdio transport is legacy; "
+        "prefer `telephone-serve` and connect via streamable HTTP at /mcp.",
         file=sys.stderr,
     )
     server = build_mcp_server()

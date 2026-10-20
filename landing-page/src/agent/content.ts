@@ -45,7 +45,7 @@ ${agentGuide.whenToUse.map((s) => `- ${s}`).join("\n")}
 ## Documentation for LLMs
 - [llms-full.txt](${o}/llms-full.txt): Full, expanded description of what ${site.name} is and how to use every transport.
 - [agents.md](${o}/agents.md): Agent-oriented capability and skills summary.
-- [How it compares](${o}/compare): ${site.name} vs other Gmail MCP servers (GongRzhe, Composio, Zapier/Pipedream, Google Workspace MCP).
+- [How it compares](${o}/compare): ${site.name} vs other ways to get agents talking (${comparison.competitors.map((c) => c.name).join(", ")}).
 
 ## Pricing & licensing
 - [pricing.md](${o}/pricing.md): Machine-readable pricing & tiers. ${site.name} is open source (MIT license) and free to self-host with no setup cost; paid tiers cover managed hosting, support, and teams.
@@ -109,11 +109,15 @@ ${hero.headline} ${hero.subhead}
 
 ## What it is
 
-${site.name} is a Model Context Protocol (MCP) server. It exposes a single
-shared service registry over three interfaces - a CLI, an MCP server
-(streamable HTTP), and a plain HTTP API - so the same typed tools behave
-identically no matter how they are called. Any agent that speaks MCP can
-discover and call its tools.
+${site.name} is a Model Context Protocol (MCP) server that acts as a
+switchboard between two MCP clients. A "caller" agent dials a named line, an
+"implementer" agent answers, and the two take turns speaking until one hangs
+up. Canonical case: an agent hits a bug in a CLI tool it cannot modify, dials
+the agent that has that codebase, answers its diagnosis questions, and confirms
+the fix once it ships. Codex CLI stays on the line with long-poll \`listen\`
+calls; ChatGPT is woken by signed MCP Events webhooks. The call tools (\`dial\`,
+\`answer\`, \`say\`, \`listen\`, \`get_messages\`, \`hang_up\`) land in the
+next release. The same tools are exposed over a CLI and a plain HTTP API.
 
 ${whenToUseSection()}
 
@@ -243,10 +247,11 @@ is identical across all three transports.
 
 ## How it compares
 
-${site.name} is a dedicated Gmail MCP, not a thin API wrapper or a generic
-multi-app gateway. Its differentiators: interactive in-chat UI (MCP Apps),
-one codebase exposed over CLI + MCP + HTTP, and an open-source, self-hostable
-server. Head-to-head comparisons:
+${site.name} is built for agents that are only MCP clients (Codex CLI,
+ChatGPT): both sides dial into one server instead of each hosting an endpoint.
+Its differentiators: two-way multi-turn calls on named lines, delivery by
+long-poll or webhook depending on the client, and an open-source,
+self-hostable server. Head-to-head comparisons:
 ${comparison.competitors
   .map((c) => `- vs ${c.name}: ${o}/vs/${c.id}`)
   .join("\n")}

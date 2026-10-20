@@ -263,6 +263,6 @@ async def generate_logo(
 
 
 if __name__ == "__main__":
-    project_name = "Python-Template"
+    project_name = "telephone"
     theme = "incorporate python snake and modern tech aesthetics, simple and clean"
     asyncio.run(generate_logo(project_name, theme))

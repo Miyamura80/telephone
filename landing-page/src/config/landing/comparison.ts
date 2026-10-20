@@ -37,8 +37,8 @@ export interface Competitor {
   category: string;
   /** One line: what they are. */
   blurb: string;
-  /** Canonical link to the competitor. */
-  url: string;
+  /** Canonical link to the alternative. Omit for DIY approaches with no home page. */
+  url?: string;
   /** Headline contrast for the /vs page hero. */
   headline: string;
   /** Paragraph summary of the difference. */
@@ -66,153 +66,147 @@ export const comparison: {
   competitors: Competitor[];
   matrix: MatrixRow[];
 } = {
-  heading: "How GmailMCP compares",
+  heading: "How Telephone compares",
   subhead:
-    "Most Gmail MCPs hand your agent raw API calls and a wall of JSON. GmailMCP is a Gmail product: an interactive inbox you can drive from inside the chat, open source and yours to host.",
-  asOf: "June 2026",
+    "There are other ways to get two agents talking. Most assume one side can host a server, or that a person will carry messages between chats. Telephone is built for agents that are only MCP clients.",
+  asOf: "October 2026",
   disclaimer:
-    "Comparison reflects publicly documented capabilities as of June 2026. The MCP ecosystem moves fast - if something here is out of date, open an issue and we'll fix it.",
+    "Comparison reflects publicly documented capabilities as of October 2026. Telephone's call tools land in its next release. If something here is out of date, open an issue and we'll fix it.",
   pillars: [
     {
-      title: "Interactive UI, not just JSON",
-      body: "GmailMCP renders MCP Apps - sandboxed UI that lives inside the chat. Review and edit a draft in a real composer, then triage a ranked inbox in an embedded dashboard, all without leaving your agent. The inbox ranking and triage flow exist because the interactive surface makes them useful; other Gmail MCPs return raw search results and stop there.",
+      title: "Built for MCP clients",
+      body: "Codex CLI and ChatGPT are MCP clients: they call servers, they cannot host one. Telephone puts the endpoint in the middle, so both agents join a call with ordinary tool calls and nothing extra to run on their side.",
     },
     {
-      title: "One codebase, three transports",
-      body: "Every tool is a pure function in a shared registry, exposed identically over a CLI, an MCP server, and a plain HTTP API. Build once and call it from your shell, any MCP client, or a script - behavior never drifts between interfaces. Most Gmail MCPs are single-transport: stdio-only, or a hosted endpoint you can't run locally.",
+      title: "A real back-and-forth",
+      body: "Either side can ask, answer, and follow up over as many turns as it takes, on a named line with one shared transcript. The implementer can ask for a version string or a config file before it touches the code, and the caller confirms the fix at the end.",
     },
     {
-      title: "Open source and self-hostable",
-      body: "The whole server is open source and ships with a Dockerfile and deploy config, so you can run it on your own infrastructure with your own OAuth credentials and encrypted token storage. Aggregator gateways route your mail through a proprietary service you don't control.",
+      title: "Delivery that fits each client",
+      body: "Clients that can wait hold a long-poll listen call open and get the next message as the tool result. Clients that cannot, like ChatGPT, are woken by a signed MCP Events webhook. Same line, same transcript either way.",
     },
   ],
   competitors: [
     {
-      id: "gongrzhe-gmail-mcp",
-      name: "GongRzhe Gmail-MCP-Server",
-      category: "Open-source wrapper",
-      blurb:
-        "The most-starred open-source Gmail MCP: a local stdio server wrapping the Gmail API.",
-      url: "https://github.com/GongRzhe/Gmail-MCP-Server",
-      headline: "The open-source Gmail MCP, upgraded.",
+      id: "a2a",
+      name: "A2A protocol",
+      category: "Open protocol",
+      blurb: "Google's Agent2Agent protocol: agents publish an Agent Card and expose a server endpoint other agents call.",
+      url: "https://a2a-protocol.org/",
+      headline: "A2A connects agent servers. Telephone connects agent clients.",
       summary:
-        "GongRzhe's server is a faithful, well-loved wrapper around the Gmail API - around a dozen tools for send, draft, read, search, labels and attachments, run locally over stdio with a credentials file on disk. You get clean primitives and JSON back. GmailMCP shares the open-source spirit but goes further: it renders an interactive composer and a ranked-inbox dashboard inside the chat, and the same tools are reachable over a CLI and an HTTP API, not just stdio.",
+        "A2A is a well-specified protocol for agents that run as services: each one publishes an Agent Card and an endpoint, and peers send it tasks. That is a good fit for hosted agents. A Codex CLI session on a laptop, or a ChatGPT conversation, has no endpoint to publish. Telephone lets those clients reach each other by both dialing into one MCP server.",
       pickThem:
-        "you want a minimal, local, stdio-only Gmail wrapper to embed in a desktop client and you're happy driving everything through JSON tool calls.",
+        "your agents already run as services you control, and you want a standard, vendor-neutral task protocol between them.",
       pickUs:
-        "you want an in-chat composer and inbox triage UI, remote zero-install access, and the same tools available over CLI and HTTP as well as MCP.",
+        "your agents are MCP clients like Codex CLI or ChatGPT, and you want them talking without wrapping each one in a server.",
     },
     {
-      id: "composio-gmail",
-      name: "Composio Gmail",
-      category: "Aggregator gateway",
-      blurb:
-        "Gmail as one toolkit inside a managed 500+ app MCP gateway with hosted OAuth.",
-      url: "https://composio.dev/toolkits/gmail",
-      headline: "A Gmail product, not a Gmail endpoint in a 500-app gateway.",
+      id: "codex-mcp-server",
+      name: "codex mcp-server",
+      category: "Agent as a tool",
+      blurb: "Run Codex itself as an MCP server, so another agent can start a Codex session as a tool call.",
+      url: "https://github.com/openai/codex",
+      headline: "Calling an agent vs. talking with one.",
       summary:
-        "Composio's strength is breadth: one managed endpoint and hosted OAuth across hundreds of SaaS apps, with Gmail exposed as a generic search / read / draft / send toolkit. GmailMCP trades breadth for depth on email - an interactive composer and ranked-inbox dashboard rendered in the chat - and it's open source, so you self-host with your own credentials instead of routing mail through a proprietary gateway.",
+        "Wrapping Codex as an MCP server turns it into a tool: the caller sends a prompt, a fresh Codex session runs, and a result comes back, with a follow-up call to continue. The caller drives every turn, and the spawned session runs wherever the caller hosts it. With Telephone, the implementer is an agent that is already running in its own repo, and either side can speak next.",
       pickThem:
-        "you need one managed endpoint spanning many SaaS apps and you don't want to run any infrastructure yourself.",
+        "you want one agent to delegate a self-contained task to a new Codex session and collect the result.",
       pickUs:
-        "email is the job: you want an interactive in-chat inbox, full control of your own deployment, and the ability to run the same tools over CLI and HTTP.",
+        "the other agent already exists in its own environment, and you need it to ask questions back before it acts.",
     },
     {
-      id: "zapier-pipedream-mcp",
-      name: "Zapier & Pipedream MCP",
-      category: "Workflow automation",
-      blurb:
-        "Gmail actions inside no-code automation platforms exposed as MCP tools.",
-      url: "https://zapier.com/mcp",
-      headline: "Built for an agent in the loop, not a no-code workflow.",
+      id: "shared-file",
+      name: "Shared scratch file",
+      category: "DIY",
+      blurb: "Both agents read and append to a file or folder they can both see, by convention.",
+      headline: "A switchboard instead of a polling convention.",
       summary:
-        "Zapier and Pipedream expose Gmail as actions inside their automation platforms - great for fire-and-forget workflows, with tools often auto-generated from API specs. GmailMCP is purpose-built for a human-in-the-loop agent: an interactive composer where you review and edit before anything sends, a ranked inbox you triage in-chat, and an open-source codebase you host yourself rather than orchestrate through a workflow runner.",
+        "A shared NOTES.md or scratch folder works when both agents run on the same machine and you tell each to check it. Nothing wakes the other side, turn-taking is whatever the prompts say, and a hosted client like ChatGPT cannot see the file at all. Telephone gives you named lines, ordered turns, and delivery that waits or wakes the peer.",
       pickThem:
-        "your goal is automated, multi-app workflows triggered by events, and you're already invested in their builder.",
+        "both agents share a filesystem and you are fine nudging them to re-read the file.",
       pickUs:
-        "you want an agent that drafts and triages with you interactively, a focused Gmail surface, and a server you own and self-host.",
+        "the agents run in different places, one of them is a hosted client, or you do not want to babysit the turn-taking.",
     },
     {
-      id: "google-workspace-mcp",
-      name: "Google Workspace MCP",
-      category: "Workspace suite",
-      blurb:
-        "Broad Google Workspace coverage (Gmail, Calendar, Drive, Docs) over MCP.",
-      url: "https://github.com/taylorwilsdon/google_workspace_mcp",
-      headline: "Gmail done deeply vs. Workspace done broadly.",
+      id: "human-relay",
+      name: "Copy-paste relay",
+      category: "Manual",
+      blurb: "A person copies each message from one chat window and pastes it into the other.",
+      headline: "Take yourself out of the loop.",
       summary:
-        "Google Workspace MCP covers a huge surface - Gmail, Calendar, Drive and Docs - as headless tools you run yourself. It's a great fit when you need the whole suite. GmailMCP goes the other way: deep on Gmail with an interactive in-chat composer and ranked-inbox dashboard, a minimal single Gmail scope, and the same tools exposed over CLI and HTTP as well as MCP.",
+        "Copy-pasting between two chats works with every client and needs no setup, which is why everyone does it. It also means you are the message bus: every diagnosis question waits for you to notice it, and the transcript is scattered across two windows. Telephone lets the agents carry the conversation and keeps one transcript you can read whenever you want.",
       pickThem:
-        "you need Calendar, Drive and Docs alongside Gmail in one server.",
+        "it is a one-off exchange, or you want to review every message before the other agent sees it.",
       pickUs:
-        "Gmail is the priority and you want an interactive inbox UI, scope minimalism, and multi-transport access.",
+        "the exchange takes several rounds, or you would rather come back to a fixed bug than to a queue of questions.",
     },
   ],
   matrix: [
     {
-      capability: "Interactive in-chat UI (MCP Apps)",
-      detail: "Composer + ranked-inbox dashboard rendered inside the chat client.",
+      capability: "Works with MCP-only clients",
+      detail: "Codex CLI and ChatGPT can take part without hosting anything.",
       us: { state: "yes" },
       cells: {
-        "gongrzhe-gmail-mcp": { state: "no", note: "JSON only" },
-        "composio-gmail": { state: "no", note: "JSON only" },
-        "zapier-pipedream-mcp": { state: "no", note: "JSON only" },
-        "google-workspace-mcp": { state: "no", note: "JSON only" },
+        a2a: { state: "no", note: "each agent hosts a server" },
+        "codex-mcp-server": { state: "partial", note: "callee must be Codex" },
+        "shared-file": { state: "partial", note: "needs a shared disk" },
+        "human-relay": { state: "yes" },
       },
     },
     {
-      capability: "Built-in inbox triage & ranking",
-      detail: "An importance-ranked inbox out of the box, not just raw search.",
+      capability: "Either side can speak next",
+      detail: "The callee can ask questions back, not just return a result.",
       us: { state: "yes" },
       cells: {
-        "gongrzhe-gmail-mcp": { state: "no", note: "raw search" },
-        "composio-gmail": { state: "no", note: "raw search" },
-        "zapier-pipedream-mcp": { state: "partial", note: "build a workflow" },
-        "google-workspace-mcp": { state: "no", note: "raw search" },
+        a2a: { state: "yes" },
+        "codex-mcp-server": { state: "partial", note: "caller drives turns" },
+        "shared-file": { state: "partial", note: "by convention" },
+        "human-relay": { state: "yes" },
       },
     },
     {
-      capability: "One codebase → CLI + MCP + HTTP",
-      detail: "Identical tools across every interface, no duplicated logic.",
+      capability: "No human relaying messages",
+      detail: "Agents hear each other without someone passing notes.",
       us: { state: "yes" },
       cells: {
-        "gongrzhe-gmail-mcp": { state: "partial", note: "stdio / HTTP" },
-        "composio-gmail": { state: "no", note: "hosted endpoint" },
-        "zapier-pipedream-mcp": { state: "no", note: "hosted endpoint" },
-        "google-workspace-mcp": { state: "partial", note: "MCP only" },
+        a2a: { state: "yes" },
+        "codex-mcp-server": { state: "yes" },
+        "shared-file": { state: "partial", note: "someone nudges" },
+        "human-relay": { state: "no" },
       },
     },
     {
-      capability: "Zero-install (remote streamable HTTP)",
-      detail: "Connect by pasting a URL - nothing to install locally.",
+      capability: "Callee keeps its own repo and context",
+      detail: "The implementer is an agent already working in its codebase.",
       us: { state: "yes" },
       cells: {
-        "gongrzhe-gmail-mcp": { state: "no", note: "local install" },
-        "composio-gmail": { state: "yes" },
-        "zapier-pipedream-mcp": { state: "yes" },
-        "google-workspace-mcp": { state: "no", note: "self-run" },
+        a2a: { state: "yes" },
+        "codex-mcp-server": { state: "partial", note: "new session" },
+        "shared-file": { state: "yes" },
+        "human-relay": { state: "yes" },
       },
     },
     {
-      capability: "Open source & self-hostable",
-      detail: "Run the full server on your own infrastructure.",
+      capability: "One shared transcript",
+      detail: "Both sides, and you, read the same ordered conversation.",
       us: { state: "yes" },
       cells: {
-        "gongrzhe-gmail-mcp": { state: "yes" },
-        "composio-gmail": { state: "no", note: "proprietary" },
-        "zapier-pipedream-mcp": { state: "no", note: "proprietary" },
-        "google-workspace-mcp": { state: "yes" },
+        a2a: { state: "partial", note: "per-task history" },
+        "codex-mcp-server": { state: "partial", note: "caller's context only" },
+        "shared-file": { state: "yes" },
+        "human-relay": { state: "no", note: "two chat windows" },
       },
     },
     {
-      capability: "Minimal scope + encrypted tokens",
-      detail: "A single Gmail scope with tokens encrypted at rest.",
-      us: { state: "yes" },
+      capability: "Available today",
+      detail: "Usable end to end right now.",
+      us: { state: "partial", note: "call tools next release" },
       cells: {
-        "gongrzhe-gmail-mcp": { state: "partial", note: "local token file" },
-        "composio-gmail": { state: "yes", note: "managed" },
-        "zapier-pipedream-mcp": { state: "yes", note: "managed" },
-        "google-workspace-mcp": { state: "partial", note: "broad scopes" },
+        a2a: { state: "yes" },
+        "codex-mcp-server": { state: "yes" },
+        "shared-file": { state: "yes" },
+        "human-relay": { state: "yes" },
       },
     },
   ],

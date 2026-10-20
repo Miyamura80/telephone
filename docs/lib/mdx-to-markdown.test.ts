@@ -56,12 +56,12 @@ describe("splitFences", () => {
       "- Pipe it:",
       "",
       "  ```bash",
-      "  export TOKEN=$(mymcp auth token)",
+      "  export TOKEN=$(telephone auth token)",
       "  ```",
     ].join("\n");
 
-    expect(codeLines(body)).toContain("  export TOKEN=$(mymcp auth token)");
-    expect(mdxBodyToMarkdown(body)).toContain("export TOKEN=$(mymcp auth token)");
+    expect(codeLines(body)).toContain("  export TOKEN=$(telephone auth token)");
+    expect(mdxBodyToMarkdown(body)).toContain("export TOKEN=$(telephone auth token)");
   });
 
   it("sees a fence indented 4+ spaces, inside a nested list", () => {
@@ -162,14 +162,14 @@ describe("mdxBodyToMarkdown", () => {
       "```",
       "",
       "```bash",
-      "export MYMCP_API_KEY=sk_live_...",
+      "export TELEPHONE_API_KEY=sk_live_...",
       "```",
     ].join("\n");
 
     const out = mdxBodyToMarkdown(raw);
     expect(out).toContain("import os");
     expect(out).toContain("from common import global_config");
-    expect(out).toContain("export MYMCP_API_KEY=sk_live_...");
+    expect(out).toContain("export TELEPHONE_API_KEY=sk_live_...");
   });
 
   it("keeps the PEP 8 blank lines inside a python block", () => {

@@ -1,20 +1,70 @@
 ---
-title: MCP Template
-description: One codebase, three interfaces - CLI, MCP server, and REST API over a shared service registry.
+title: Telephone
+description: An MCP switchboard that lets two AI agents hold a two-way conversation with no human in the loop.
 ---
 
 import { Terminal, Bot, Globe, Rocket, Ship } from 'lucide-react';
 
-Write your logic once as a pure service, and MCP Template exposes it everywhere -
-a terminal command, an MCP connection for AI assistants like Claude, and an
-authenticated HTTP API. Same behavior, three transports, no duplication.
+Telephone is an MCP server that acts as a switchboard. Two MCP clients - two
+Codex CLI instances, or ChatGPT and Codex - connect to it, and it relays a
+two-way conversation between them with no human copy-pasting in the middle. One
+server hosts many named **lines**, so several calls can run at once.
+
+<Callout type="info" title="Status">
+This release renames and re-initializes the project. The call tools (`dial`,
+`answer`, `say`, `listen`, `get_messages`, `hang_up`) land in the next release,
+so the MCP tool surface is empty today. See
+[Coming next: call tools](/docs/mcp/tools#coming-next-call-tools-planned).
+</Callout>
+
+## Example: a bug report between agents
+
+A **caller** agent is using a CLI tool and hits a bug. It cannot modify the
+tool, but an **implementer** agent elsewhere has the tool's codebase. Instead of
+a human relaying messages between them:
+
+1. The caller `dial`s a line and describes the failure.
+2. The implementer `answer`s, then asks diagnosis questions with `say` (which
+   flags, which version, the full error).
+3. The caller answers each question from its own environment.
+4. The implementer fixes the bug and asks the caller to retry.
+5. The caller confirms the fix, and either side can `hang_up`.
+
+## How it works
+
+```text
+  caller agent                  Telephone                  implementer agent
+  (Codex CLI)                 (one server)                 (ChatGPT or Codex)
+ +-------------+           +-----------------+           +------------------+
+ |             |  MCP      |  line "bug-123" |   MCP     |                  |
+ |  say/listen |---------->|  +-----------+  |<----------| answer/say       |
+ |             |<----------|  | transcript|  |---------->|                  |
+ +-------------+  held     |  +-----------+  |  signed   +------------------+
+                  open     |  line "deploy"  |  webhook
+                  until    |  line ...       |  (MCP Events)
+                  peer     +-----------------+  wakes the
+                  speaks                        client
+```
+
+Each side needs to learn when the other has spoken, and Telephone supports two
+delivery modes for that:
+
+- **Long-poll** for agent CLIs such as Codex: `say` and `listen` hold the tool
+  call open on the server and return as soon as the peer speaks, so the agent
+  stays on the line inside its own tool loop.
+- **MCP Events** for ChatGPT: the server sends a signed webhook that wakes the
+  client when a message arrives (draft spec).
+
+Under the switchboard sits a shared service registry exposed three ways: a CLI
+(`telephone`), the MCP endpoint (streamable HTTP at `/mcp`), and an
+authenticated REST API.
 
 <Cards>
   <Card
     icon={<Rocket />}
     title="Quick Start"
     href="/docs/quickstart"
-    description="Install the template and run your first command in under a minute."
+    description="Install Telephone and run your first command in under a minute."
   />
 </Cards>
 
@@ -22,16 +72,16 @@ authenticated HTTP API. Same behavior, three transports, no duplication.
 
 <Cards>
   <Card
-    icon={<Terminal />}
-    title="CLI"
-    href="/docs/cli"
-    description="Run commands in your terminal with the mymcp binary."
-  />
-  <Card
     icon={<Bot />}
     title="MCP Server"
     href="/docs/mcp"
-    description="Connect AI assistants like Claude directly over MCP."
+    description="Connect Codex, ChatGPT, Claude, and other MCP clients."
+  />
+  <Card
+    icon={<Terminal />}
+    title="CLI"
+    href="/docs/cli"
+    description="Run commands in your terminal with the telephone binary."
   />
   <Card
     icon={<Globe />}
@@ -54,6 +104,6 @@ authenticated HTTP API. Same behavior, three transports, no duplication.
 
 ## Licensing & pricing
 
-MCP Template is open source under the [MIT license](https://github.com/Miyamura80/MCP-Template/blob/main/LICENSE) - free to use, modify, and self-host forever, with **no setup fee and no license cost**. The full server runs on your own infrastructure.
+Telephone is open source under the [MIT license](https://github.com/Miyamura80/telephone/blob/main/LICENSE) - free to use, modify, and self-host forever, with **no setup fee and no license cost**. The full server runs on your own infrastructure.
 
 Optional managed hosting and team support are available as paid tiers (hosted deployment, monitoring, SSO/audit logs, SLA, and commercial/OEM licensing). The full breakdown lives on the product landing page, with a machine-readable manifest at `/pricing.md` for agents comparing options.

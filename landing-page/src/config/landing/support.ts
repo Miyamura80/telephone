@@ -5,14 +5,14 @@
  * Data-driven like the rest of the config: this one module feeds the `/support`
  * page, its `/help` and `/contact` aliases, the `/support.md` twin, and the
  * `## Support` section of llms.txt / agents.md / llms-full.txt. Point it at a
- * real inbox (see the TODO below) and it is live everywhere.
+ * real support address (see the TODO below) and it is live everywhere.
  *
  * Order is deliberate: troubleshooting first (most "issues" are setup, and an
  * agent or user should self-serve before opening a ticket), then the channels.
  */
 import { site } from "./site";
 
-// TODO: your real support inbox. This placeholder is intentionally not a live
+// TODO: your real support address. This placeholder is intentionally not a live
 // address - replace it (e.g. support@yourdomain.com) before you ship, or the
 // "Email support" channel points nowhere.
 export const supportEmail = "support@example.com";
@@ -46,7 +46,7 @@ export interface SupportChannel {
   /**
    * Exactly one channel is `primary`: it renders as the single accent CTA.
    * Every other channel is a quiet secondary link (see the design rule "one
-   * CTA per view"). This template's audience is developers, so GitHub Issues
+   * CTA per view"). The audience is developers, so GitHub Issues
    * leads and email is the fallback.
    */
   primary: boolean;

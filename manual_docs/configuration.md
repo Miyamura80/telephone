@@ -9,7 +9,7 @@ common/
 ├── global_config.yaml    # Base configuration values (checked into git)
 ├── config_models.py      # Pydantic models defining config structure
 ├── global_config.py      # Config class and singleton instance
-└── production_config.yaml # Production overrides (saas branch only)
+└── production_config.yaml # Production overrides (loaded when DEV_ENV=prod)
 
 .env                      # Environment variables/secrets (git-ignored)
 .global_config.yaml       # Local YAML overrides (git-ignored)

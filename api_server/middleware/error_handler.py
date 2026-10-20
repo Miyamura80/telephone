@@ -206,14 +206,3 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
                 "Internal server error",
                 request_id,
             )
-
-
-async def attachment_too_large_handler(request: Request, exc: Exception) -> Response:
-    """Map ``GmailAttachmentTooLargeError`` to 413 Payload Too Large.
-
-    Registered on the app so a client requesting an over-cap attachment gets a
-    clear client error instead of the generic 500 the middleware would otherwise
-    produce for an uncaught domain exception.
-    """
-    request_id = getattr(request.state, "request_id", uuid.uuid4().hex)
-    return _build_error_response(413, str(exc), request_id)

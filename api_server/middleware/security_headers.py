@@ -108,7 +108,7 @@ STATIC_SECURITY_HEADERS: tuple[tuple[str, str], ...] = (
     # Redundant with `frame-ancestors 'none'` for modern browsers, and required
     # by the older ones (and by every DAST scanner) that don't read CSP.
     ("x-frame-options", "DENY"),
-    # The Google OAuth callback carries `code` and `state` in its query string;
+    # OAuth callbacks carry `code` and `state` in their query string;
     # `no-referrer` is what keeps those out of any outbound Referer header.
     ("referrer-policy", "no-referrer"),
     ("permissions-policy", _PERMISSIONS_POLICY),

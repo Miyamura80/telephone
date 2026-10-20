@@ -1,94 +1,90 @@
-# mcp-template
+# telephone
 
 <p align="center">
-  <img src="media/banner.png" alt="2" width="400">
+  <img src="media/banner.png" alt="Telephone: a switchboard for AI agents" width="600">
 </p>
 
 <p align="center">
-<b>Batteries-included Python template. One codebase ships as a CLI, an MCP server, and an HTTP API over a shared service registry.</b>
+<b>A switchboard MCP server that lets AI agents call each other. One server, two-way conversations, no human in the loop.</b>
 </p>
 
 <p align="center">
-  <a href="#key-features">Key Features</a> •
-  <a href="#architecture">Architecture</a> •
+  <a href="#why">Why</a> •
+  <a href="#how-it-works">How it works</a> •
+  <a href="#status">Status</a> •
   <a href="#quick-start">Quick Start</a> •
-  <a href="#cli-usage">CLI Usage</a> •
-  <a href="#adding-commands">Adding Commands</a> •
+  <a href="#architecture">Architecture</a> •
   <a href="#configuration">Configuration</a> •
-  <a href="manual_docs/deploy.md">Deploy</a> •
-  <a href="#credits">Credits</a>
+  <a href="manual_docs/deploy.md">Deploy</a>
 </p>
 
 <p align="center">
-  <a href="https://railway.com/deploy/gmailmcp"><img alt="Deploy on Railway" src="https://railway.com/button.svg" height="32"></a>
-  &nbsp;
-  <a href="https://render.com/deploy?repo=https://github.com/Miyamura80/MCP-Template"><img alt="Deploy to Render" src="https://render.com/images/deploy-to-render-button.svg" height="32"></a>
+  <a href="https://render.com/deploy?repo=https://github.com/Miyamura80/telephone"><img alt="Deploy to Render" src="https://render.com/images/deploy-to-render-button.svg" height="32"></a>
 </p>
 
 <p align="center">
-  <img alt="Project Version" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FMiyamura80%2FMCP-Template%2Fmain%2Fpyproject.toml&query=%24.project.version&label=version&color=blue">
-  <img alt="Python Version" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FMiyamura80%2FMCP-Template%2Fmain%2Fpyproject.toml&query=%24.project['requires-python']&label=python&logo=python&color=blue">
-  <img alt="GitHub repo size" src="https://img.shields.io/github/repo-size/Miyamura80/MCP-Template">
-  <img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/Miyamura80/MCP-Template/a_test_target_tests.yml?branch=main">
-  <a href="https://skills.sh/Miyamura80/MCP-Template"><img alt="skills.sh" src="https://skills.sh/b/Miyamura80/MCP-Template"></a>
-
+  <img alt="Project Version" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FMiyamura80%2Ftelephone%2Fmain%2Fpyproject.toml&query=%24.project.version&label=version&color=blue">
+  <img alt="Python Version" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FMiyamura80%2Ftelephone%2Fmain%2Fpyproject.toml&query=%24.project['requires-python']&label=python&logo=python&color=blue">
+  <img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/Miyamura80/telephone/a_test_target_tests.yml?branch=main">
 </p>
 
 ---
 
-## Agent Prompt
+## Why
 
-> Copy and paste this into your AI coding agent (Claude Code, Cursor, Copilot, etc.) to install:
+Coding agents get stuck on problems they cannot fix from where they sit. An agent driving a CLI hits a crash, but the CLI's source lives in another repo it has no access to. Today a human copies the error into a second agent session that does have the code, copies the questions back, and relays answers until the bug is fixed.
 
-```text
-Install the CLI and download the gmail-mcp skill:
+Telephone removes the human relay. The stuck agent **dials** a line, an agent with the code **answers**, and they talk it through over MCP until one of them hangs up.
 
-pip install mcp-template
-
-curl -fsSL https://raw.githubusercontent.com/Miyamura80/MCP-Template/main/scripts/install-skills.sh -o install-skills.sh
-bash install-skills.sh && rm install-skills.sh
+```
+ Caller agent (no code access)                 Implementer agent (has the repo)
+ "acme-cli sync crashes with KeyError: 'region'"  --->
+                                             <---  "Run `acme-cli --version` and paste ~/.acme/config.toml"
+ "v2.3.1, config has no region key"               --->
+                                             <---  "Fixed: region now defaults to us-east-1. Pull and retry."
+ "Works. Thanks!"  [hang_up(resolved=true)]       --->
 ```
 
-The official **gmail-mcp** agent skill is self-published on
-[skills.sh](https://skills.sh/Miyamura80/MCP-Template). Install it directly with:
+## How it works
+
+One MCP server, any number of named **lines**. Each participant connects to the same server and is reached in whichever way its client supports:
+
+| Client | How it hears the other side |
+|---|---|
+| Codex CLI (and any MCP client) | Stays on the line with a long-polling `listen` / `say` tool call. The server holds the call open and returns the peer's message as the tool result. |
+| ChatGPT | Subscribes to the line through **MCP Events**; the server sends a signed webhook that wakes the Work chat. |
+
+Why not plain server push? Under the current MCP spec (2026-07-28), a server may only send its own requests while a client request is in flight, and Codex CLI does not surface `notifications/message` to the model. A tool result is the one channel every agent reads, so Telephone delivers every message as a tool result or, for clients that support it, an MCP Event.
+
+## Status
+
+| Piece | State |
+|---|---|
+| Server scaffolding (CLI, MCP over streamable HTTP, HTTP API, auth, billing, deploy) | Ready |
+| Call tools: `dial`, `answer`, `say`, `listen`, `get_messages`, `hang_up` | Next PR |
+| MCP Events delivery for ChatGPT | Next PR |
+| Two-Codex eval (caller with a broken CLI phones the implementer) | Next PR |
+
+## Quick Start
 
 ```bash
-npx skills add Miyamura80/MCP-Template
+uv sync                         # install deps
+uv tool install prek && prek install
+
+uv run telephone --help         # CLI
+uv run telephone-serve          # HTTP API + MCP at /mcp on one port
+uv run telephone-mcp            # legacy: stdio MCP only, for local dev
 ```
 
-The skill's source of truth lives in [`skills/gmail-mcp/SKILL.md`](skills/gmail-mcp/SKILL.md);
-`make sync-skills` mirrors it to the landing page's
-`/.well-known/agent-skills/` discovery tree (digest-pinned in `index.json`).
+Connect a client to the running server, e.g. Codex CLI:
 
-## App Distribution
-
-- MCP server with OAuth
-- Claude connectors and ChatGPT apps
-- APIs and SDKs
-- Chat interfaces like iMessage and WhatsApp
-- A dashboard that uses the same MCP layer
-- Open source
-
-## Key Features
-
-| Feature | Stack |
-|---|---|
-| CLI (auto-discovery commands, global flags, shell completions, self-update) | Typer |
-| MCP server (streamable HTTP at `/mcp`, services auto-registered as tools; stdio supported for local dev) | FastMCP |
-| HTTP API server (also hosts `/mcp`) | FastAPI + Uvicorn |
-| Auth | WorkOS + API keys |
-| Payments | Stripe subscriptions + x402 sell-side paywall (price a tool with `@service(price=...)`; agents pay per call in stablecoins, Cloudflare Wallets / x402 ecosystem) |
-| Database + migrations | SQLAlchemy + Alembic |
-| Config (YAML + `.env`) | Pydantic-settings |
-| LLM inference + observability | DSPY + LiteLLM + LangFuse |
-| Testing | pytest + `TestTemplate` |
-| Lint / type / dead-code | Ruff + Vulture + ty + import-linter |
-| Pre-commit (folder size, ai-writing, agent-config sync) | prek |
-| Telemetry | Anonymous, opt-out |
+```bash
+codex mcp add telephone --url http://localhost:8080/mcp
+```
 
 ## Architecture
 
-One codebase, three interfaces. Write business logic once in `services/` and it ships as a CLI subcommand, an MCP tool, and an HTTP route - same Pydantic input/output contract everywhere.
+Telephone is built on one codebase with three interfaces. Business logic lives once in `services/` and ships as a CLI subcommand, an MCP tool, and an HTTP route, with the same Pydantic contract everywhere.
 
 ```
 ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
@@ -113,28 +109,19 @@ One codebase, three interfaces. Write business logic once in `services/` and it 
         └────────────┴───────┴────────────┴─────────────┘
 ```
 
-### MCP UI (optional)
+| Feature | Stack |
+|---|---|
+| CLI (auto-discovered commands, global flags, shell completions, self-update) | Typer |
+| MCP server (streamable HTTP at `/mcp`; stdio for local dev) | FastMCP |
+| HTTP API server (also hosts `/mcp`) | FastAPI + Uvicorn |
+| Auth | WorkOS AuthKit (OAuth 2.1) + API keys |
+| Payments | Stripe subscriptions + x402 per-call pricing |
+| Database + migrations | SQLAlchemy + Alembic |
+| Config (YAML + `.env`) | pydantic-settings |
+| Lint / type / dead code | Ruff + ty + Vulture + import-linter |
+| Pre-commit | prek |
 
-Need elicitation, image output, or an iframe dashboard for an MCP tool? Add an opt-in **enhancer** in `mcp_server/enhancers/`. Enhancers wrap a service for the MCP transport only - the pure service stays untouched and CLI/API consumers are unaffected.
-
-See [`mcp_server/MCP_UI_ARCHITECTURE.md`](mcp_server/MCP_UI_ARCHITECTURE.md) for the full design.
-
-## Quick Start
-
-```bash
-make onboard              # interactive setup (rename, deps, env, hooks)
-uv sync                   # install deps
-uv run mymcp --help       # see all CLI commands
-uv run mymcp greet Alice  # run a command
-uv run mymcp init my_command  # scaffold a new command
-
-uv run mymcp-serve        # start the server (HTTP API + MCP at /mcp on one port)
-uv run mymcp-mcp          # legacy: stdio MCP only, for local Claude Desktop / dev
-```
-
-## Deploy
-
-One-click deploy to Railway or Render (backend + managed Postgres, migrations run automatically). See **[deployment docs](manual_docs/deploy.md)** for the per-platform setup, the Railway template variable map, and OAuth/secret wiring.
+MCP-only behavior (progress, elicitation, MCP Apps) goes in opt-in **enhancers** under `mcp_server/enhancers/`, so CLI and API consumers of the same service are unaffected. See [`mcp_server/MCP_UI_ARCHITECTURE.md`](mcp_server/MCP_UI_ARCHITECTURE.md).
 
 ## CLI Usage
 
@@ -150,90 +137,29 @@ Global flags go **before** the subcommand:
 | `--version` | `-V` | Print version and exit |
 
 ```bash
-uv run mymcp --format json config show     # JSON output
-uv run mymcp --dry-run greet Bob           # preview without executing
-uv run mymcp --verbose greet Alice         # detailed output
+uv run telephone --format json config show
+uv run telephone doctor
 ```
 
-## Adding Commands
-
-Drop a Python file in `src/cli/commands/` and it is auto-discovered.
-
-**Single command** - export a `main()` function:
-
-```python
-# src/cli/commands/hello.py
-from typing import Annotated
-import typer
-
-
-def main(name: Annotated[str, typer.Argument(help="Who to greet.")]) -> None:
-    """Say hello."""
-    typer.echo(f"Hello, {name}!")
-```
-
-```bash
-uv run mymcp hello World   # Hello, World!
-```
-
-**Subcommand group** - export `app = typer.Typer()`:
-
-```python
-# src/cli/commands/db.py
-import typer
-
-app = typer.Typer()
-
-
-@app.command()
-def migrate() -> None:
-    """Run migrations."""
-    ...
-```
-
-```bash
-uv run mymcp db migrate
-```
-
-Or scaffold with: `uv run mymcp init my_command --desc "Does something"`.
+New commands are auto-discovered from `src/cli/commands/`; scaffold one with `uv run telephone init my_command --desc "Does something"`.
 
 ## Configuration
 
 ```python
 from common import global_config
 
-# Access config values from common/global_config.yaml
-global_config.example_parent.example_child
-
-# Access secrets from .env
-global_config.OPENAI_API_KEY
+global_config.server.port  # values from common/global_config.yaml
+global_config.OPENAI_API_KEY  # secrets from .env
 ```
 
-CLI config inspection:
-
 ```bash
-uv run mymcp config show                           # full config
-uv run mymcp config get llm_config.cache_enabled   # single value
-uv run mymcp config set logging.verbose false      # write override
+uv run telephone config show
+uv run telephone config get server.port
+uv run telephone config set logging.verbose false
 ```
 
 [Full configuration docs](manual_docs/configuration.md)
 
 ## Credits
 
-This software uses the following tools:
-- [Cursor: The AI Code Editor](https://cursor.com)
-- [uv](https://docs.astral.sh/uv/)
-- [Typer: CLI framework](https://typer.tiangolo.com/)
-- [Rich: Terminal formatting](https://rich.readthedocs.io/)
-- [prek: Rust-based pre-commit framework](https://github.com/j178/prek)
-- [DSPY: Pytorch for LLM Inference](https://dspy.ai/)
-- [LangFuse: LLM Observability Tool](https://langfuse.com/)
-
-## About the Core Contributors
-
-<a href="https://github.com/Miyamura80/MCP-Template/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=Miyamura80/MCP-Template" />
-</a>
-
-Made with [contrib.rocks](https://contrib.rocks).
+Built with [uv](https://docs.astral.sh/uv/), [Typer](https://typer.tiangolo.com/), [FastMCP](https://github.com/modelcontextprotocol/python-sdk), FastAPI, and [prek](https://github.com/j178/prek).

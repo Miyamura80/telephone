@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from api_server.routes import well_known
 from api_server.server import app
+from mcp_server.server import llm_tool_surface
 
 CARD_PATH = "/.well-known/mcp/server-card.json"
 
@@ -24,7 +25,7 @@ class TestServerCard:
 
         body = resp.json()
         # The fields the registry audit checks for: name, description, icon.
-        assert body["name"] == "io.github.Miyamura80/MCP-Template"
+        assert body["name"] == "io.github.Miyamura80/telephone"
         assert body["title"]
         assert body["description"]
         assert body["version"]
@@ -36,12 +37,11 @@ class TestServerCard:
         # Pre-connect discovery: agents preview the tool surface before connecting.
         body = self._client().get(CARD_PATH).json()
         tools = body["tools"]
-        assert tools, "server card must advertise tools[] for pre-connect discovery"
         assert all(t["name"] and t["description"] for t in tools)
         names = {t["name"] for t in tools}
-        # A representative public Gmail tool is exposed...
-        assert "gmail_curate_inbox" in names
-        # ...while CLI-only defaults are not part of the MCP tool surface.
+        # The card mirrors exactly the LLM-facing MCP tool surface...
+        assert names == {e.name for e in llm_tool_surface()}
+        # ...so CLI-only defaults are never advertised.
         assert "doctor" not in names
         assert "config_set" not in names
 

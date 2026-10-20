@@ -6,7 +6,6 @@
     "cli",
     "mcp",
     "api",
-    "gmail-webhooks",
     "deployment"
   ]
 }

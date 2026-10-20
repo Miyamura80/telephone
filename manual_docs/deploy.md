@@ -1,15 +1,14 @@
 # Deployment
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/gmailmcp)
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Miyamura80/MCP-Template)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Miyamura80/telephone)
 
 Both targets provision the backend (FastAPI + MCP at `/mcp`) as a Docker service plus a managed Postgres database, run Alembic migrations, and prompt for the required secrets. The landing page (`landing-page/`) deploys separately and is not included.
 
-> **Forking this repo?** The buttons point at the canonical upstream template. To deploy your own fork, change the Render button's `repo=` URL to your fork and re-create the Railway template from your project (its deploy link is fixed to a published template). Render's button takes an absolute repo URL, so it can't auto-follow a fork.
+> **Forking this repo?** The Render button points at the canonical repo; change its `repo=` URL to your fork. Railway has no published Telephone template yet: deploy from the repo directly, or publish your own template from your project (see below).
 
 ## Render
 
-Driven by [`render.yaml`](../render.yaml). The database and `SESSION_SECRET_KEY` are wired automatically; you're prompted for the WorkOS and Google OAuth secrets. After the first deploy, set `MCP_PUBLIC_URL` to `https://<your-render-host>/mcp` and `GOOGLE_REDIRECT_URI` to `https://<your-render-host>/api/v1/auth/google/callback` (also add that callback to your Google OAuth client), then redeploy.
+Driven by [`render.yaml`](../render.yaml). The database and `SESSION_SECRET_KEY` are wired automatically; you're prompted for the WorkOS secrets. After the first deploy, set `MCP_PUBLIC_URL` to `https://<your-render-host>/mcp`, then redeploy.
 
 ## Railway
 
@@ -26,21 +25,19 @@ The template has two services: a **Postgres** service (use Railway's standard Po
 | `DEV_ENV` | `prod` |
 | `BACKEND_DB_URI` | `${{Postgres.DATABASE_URL}}` (private URL; matches your Postgres service name) |
 | `MCP_PUBLIC_URL` | `https://${{RAILWAY_PUBLIC_DOMAIN}}/mcp` |
-| `GOOGLE_REDIRECT_URI` | `https://${{RAILWAY_PUBLIC_DOMAIN}}/api/v1/auth/google/callback` |
 | `SESSION_SECRET_KEY` | `${{ secret(32) }}` |
-| `GOOGLE_TOKEN_ENC_KEY` | `${{ secret(43, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_") }}=` |
 
-The trailing `=` on `GOOGLE_TOKEN_ENC_KEY` is literal (outside the `${{ }}`): 43 base64url chars + `=` decodes to the 32 bytes Fernet requires. Railway generates `secret(...)` values **once** and persists them, so redeploys don't invalidate the session secret or break stored Gmail tokens.
+Railway generates `secret(...)` values **once** and persists them, so redeploys don't invalidate the session secret.
 
 **Leave empty; the deployer must paste their own** (per-deployment credentials that can't be pre-baked):
 
-`WORKOS_CLIENT_ID` · `WORKOS_API_KEY` · `WORKOS_AUTHKIT_DOMAIN` · `GOOGLE_CLIENT_ID` · `GOOGLE_CLIENT_SECRET`
+`WORKOS_CLIENT_ID` · `WORKOS_API_KEY` · `WORKOS_AUTHKIT_DOMAIN`
 
 **Gotchas:**
 
-- `DEV_ENV` must be `prod`. The Dockerfile sets it, but an empty template var *overrides* it back to blank, silently disabling prod token encryption and the prod config overlay.
-- The backend service needs a **public domain** enabled, or `${{RAILWAY_PUBLIC_DOMAIN}}` resolves to empty and both URLs break.
-- After deploy, register the `GOOGLE_REDIRECT_URI` value in your Google Cloud OAuth client's authorized redirect URIs, and point your WorkOS redirect/resource at `MCP_PUBLIC_URL`. (Inherent to OAuth; can't be automated.)
+- `DEV_ENV` must be `prod`. The Dockerfile sets it, but an empty template var *overrides* it back to blank, silently disabling the prod config overlay.
+- The backend service needs a **public domain** enabled, or `${{RAILWAY_PUBLIC_DOMAIN}}` resolves to empty and `MCP_PUBLIC_URL` breaks.
+- After deploy, point your WorkOS redirect/resource at `MCP_PUBLIC_URL`. (Inherent to OAuth; can't be automated.)
 
 ## Optional integrations
 

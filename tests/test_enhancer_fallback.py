@@ -1,7 +1,7 @@
 """Crash-fallback behavior of enhanced MCP tools (`mcp_server._tool_factory`).
 
 The fallback must never execute a service twice, and must never silently
-re-execute a mutating service (duplicate Gmail draft / double charge).
+re-execute a mutating service (duplicate message / double charge).
 """
 
 import asyncio

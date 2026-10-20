@@ -9,9 +9,9 @@ Telephone gives you three ways to interact with the same set of services:
 - **MCP** - Connect agents like Codex, ChatGPT, or Claude directly
 - **REST API** - Call endpoints over HTTP with authentication
 
-The call tools that let two agents talk (`dial`, `say`, `listen`, ...) land in
-the next release; today you can install the server and exercise the shared
-infrastructure with the example `greet` command.
+Two agents talk through six call tools: `dial`, `answer`, `say`, `listen`,
+`get_messages` and `hang_up`. Install the server, start it, and point two MCP
+clients at `/mcp`.
 
 ## Installation
 
@@ -41,15 +41,54 @@ uv run telephone --help
 </Step>
 <Step>
 
-### Try a command
+### Start the server
 
 ```bash
-uv run telephone greet Alice
-# Hello, Alice!
+uv run telephone-serve
 ```
+
+Run a single process (one replica, one worker): lines live in memory, so both
+agents must reach the same server. Per-call JSONL transcripts are written to
+`.telephone/transcripts/`.
+
+</Step>
+<Step>
+
+### Connect Codex CLI
+
+```toml
+# ~/.codex/config.toml
+[mcp_servers.telephone]
+url = "https://telephone.example.com/mcp"
+env_http_headers = { "X-API-KEY" = "TELEPHONE_API_KEY" }
+tool_timeout_sec = 600
+```
+
+`dial`, `answer`, `say` and `listen` block for up to `wait_s` (50s by default,
+540s max) and return as soon as the peer speaks. Codex's default
+`tool_timeout_sec` is 60, so raise it to 600 for long calls.
+
+</Step>
+<Step>
+
+### Place a call
+
+Tell one agent to `dial` a line (for example `bug-123`) with a description of
+its problem, and the other to `answer` the same line. Each gets a `seat` token
+to pass on every later call. The conversation runs until the caller calls
+`hang_up` with `resolved: true` or `false`, or the call hits `max_turns` (60
+messages) or `idle_timeout_s` (900s). See [Tools](/docs/mcp/tools) for every
+argument and outcome.
 
 </Step>
 </Steps>
+
+### Watch two agents fix a bug
+
+```bash
+make eval_codex_call_fake   # scripted caller and implementer, no LLM
+make eval_codex_call        # two real Codex CLIs fix a broken acme-cli
+```
 
 ## Next steps
 

@@ -9,11 +9,8 @@ Telephone 是一个充当交换机的 MCP 服务器。两个 MCP 客户端（例
 实例，或 ChatGPT 与 Codex）连接到它，由它在两者之间转发双向对话，中间不需要人工复制粘贴。
 一个服务器可以承载多条具名的 **line（线路）**，因此可以同时进行多个通话。
 
-<Callout type="info" title="状态">
-本次发布只是项目的重命名与重新初始化。通话工具（`dial`、`answer`、`say`、`listen`、
-`get_messages`、`hang_up`）将在下一个版本中上线，因此目前 MCP 工具列表为空。参见
-[Coming next: call tools](/docs/mcp/tools#coming-next-call-tools-planned)。
-</Callout>
+六个通话工具通过 `/mcp` 提供：`dial`、`answer`、`say`、`listen`、`get_messages`
+和 `hang_up`。完整说明见 [Tools](/docs/mcp/tools)。
 
 ## 示例：代理之间的 bug 报告
 
@@ -24,7 +21,10 @@ Telephone 是一个充当交换机的 MCP 服务器。两个 MCP 客户端（例
 2. 实现方 `answer` 接听，然后用 `say` 提出诊断问题（使用了哪些参数、哪个版本、完整的错误信息）。
 3. 呼叫方在自己的环境中逐一回答。
 4. 实现方修复 bug，并请呼叫方重试。
-5. 呼叫方确认修复成功，任意一方都可以 `hang_up` 挂断。
+5. 呼叫方确认修复成功，并以 `resolved: true` 调用 `hang_up` 挂断。
+
+`dial` 和 `answer` 会返回一个 `seat` 令牌，双方在之后的每次调用中都要传入它。
+通话在达到 `max_turns`（默认 60 条消息）或静默超过 `idle_timeout_s`（900 秒）后也会自动结束。
 
 ## 工作原理
 
@@ -44,9 +44,12 @@ Telephone 是一个充当交换机的 MCP 服务器。两个 MCP 客户端（例
 
 每一方都需要知道对方何时发言，Telephone 为此提供两种投递方式：
 
-- **长轮询（Long-poll）**，适用于 Codex 等代理 CLI：`say` 和 `listen` 会在服务器端保持工具调用，
-  一旦对方发言就立即返回，因此代理始终在自己的工具循环中"保持通话"。
-- **MCP Events**，适用于 ChatGPT：有新消息时，服务器发送带签名的 webhook 唤醒客户端（草案规范）。
+- **长轮询（Long-poll）**，适用于 Codex 等代理 CLI：`dial`、`answer`、`say` 和 `listen`
+  会在服务器端保持工具调用最多 `wait_s`（默认 50 秒，上限 540 秒），一旦对方发言就立即返回，
+  因此代理始终在自己的工具循环中"保持通话"。
+- **MCP Events**，适用于事件驱动的客户端：服务器声明 `capabilities.events`，并在对方发言时
+  发送带签名的 webhook（`line.message`、`line.ended`）唤醒客户端（草案规范）。ChatGPT 端到端协商
+  events 仍需等待服务器迁移到 MCP Python SDK v2（协议 2026-07-28）。
 
 在交换机之下是一个共享的服务注册表，以三种方式对外提供：CLI（`telephone`）、
 MCP 端点（`/mcp` 上的 streamable HTTP），以及带认证的 REST API。

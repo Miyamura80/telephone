@@ -1,68 +1,98 @@
 ---
 title: Tools
-description: The MCP tools your assistant gets once connected, and the call tools coming next
+description: The call tools your agent gets once connected, and how replies are delivered
 ---
 
 {/* BEGIN generated: tool reference - edit scripts/gen_tool_docs.py */}
 
-Once connected, your assistant has 0 Telephone tools. Tools marked
+Once connected, your assistant has 6 Telephone tools. Tools marked
 **UI** render an interactive MCP App in clients that support it and fall
 back to plain structured output everywhere else.
 
-Every tool takes a `user_id` that the server injects from the authenticated
-principal - clients never pass it.
+Any tool that takes a `user_id` gets it from the authenticated principal -
+clients never pass it.
+
+## Placing and taking calls
+
+Two agents meet on a named line. The caller `dial`s, the implementer `answer`s, and both pass
+their seat token on every later call.
+
+| Tool | Description |
+|------|-------------|
+| `dial` | Place a call on a named line to an agent who can help, such as one with access to code you cannot change. |
+| `answer` | Answer a call on a named line as the implementer. |
+| `say` | Say something to the other agent on your call, then wait for their reply (pass wait_s=0 to return immediately). |
+| `listen` | Wait for the other agent's next message on your call. |
+| `get_messages` | Read the full transcript of your call (both sides) without waiting. |
+| `hang_up` | End your call. |
+
+<Callout type="info">
+`dial`, `answer`, `say` and `listen` wait up to `wait_s` for the other agent, so a client that
+cannot be woken by the server (Codex CLI) hears the reply as the tool result. Event-driven
+clients (ChatGPT) pass `wait_s: 0` and subscribe to `line.message` through MCP Events.
+</Callout>
 
 {/* END generated */}
 
-<Callout type="info" title="The tool surface is empty today">
-This release is the Telephone re-init: the server, auth, billing, and transports
-are in place, but no LLM-facing tools are registered yet. The operational
-services (`greet`, `config_*`, `doctor`) are reachable from the
-[CLI](/docs/cli) and the [REST API](/docs/api/tools) only. The call tools below
-land in the next release.
-</Callout>
+## Outcomes
 
-## Coming next: call tools (planned)
+Every call tool returns the same `CallView`. Its `outcome` tells the agent what
+to do next, and `next_step` says it in plain words:
 
-Everything in this section is **planned** and not yet served. Names and
-parameters may still change before they ship.
+| `outcome` | Meaning | Next step |
+|-----------|---------|-----------|
+| `message` | The other agent spoke; see `messages` | Reply with `say` |
+| `waiting` | Nothing new before `wait_s` elapsed | Call `listen` again |
+| `no_call` | `answer` found nobody dialing yet | Call `answer` again |
+| `ended` | The call is over; see `ended_reason`, `resolved` | Stop |
 
-Telephone connects two MCP clients on a named **line**. One side (the
-**caller**) dials; the other (the **implementer**) answers; then they take turns
-speaking until one hangs up.
+A call ends when either side calls `hang_up`, when it reaches `max_turns`
+messages, or after `idle_timeout_s` of silence (both in
+`common/telephone.yaml`). Only the caller's `hang_up` sets `resolved`.
 
-| Tool | Who calls it | What it will do |
-|------|--------------|-----------------|
-| `dial` | Caller | Open a call on a named line and wait for the other side to pick up |
-| `answer` | Implementer | Pick up a ringing call on a line |
-| `say` | Either side | Send a message to the peer; on long-poll clients, also wait for the reply |
-| `listen` | Either side | Wait for the peer's next message without sending one |
-| `get_messages` | Either side | Read the call transcript so far (non-blocking) |
-| `hang_up` | Either side | End the call and release the line |
+## Delivery modes
 
-### Delivery modes
+A conversation only works if each side learns when the other has spoken.
 
-A conversation only works if each side learns when the other has spoken. The
-server supports two ways to deliver that:
-
-- **Long-poll (Codex CLI and other agent CLIs).** `say` and `listen` hold the
-  tool call open on the server and return when the peer speaks (or a timeout
-  elapses, after which the agent calls `listen` again). The agent never leaves
-  the tool loop, so it stays "on the line" with no human prompting it.
-- **MCP Events webhooks (ChatGPT).** A client that cannot hold a tool call open
-  for long subscribes to the line; when the peer speaks, the server sends a
-  signed webhook that wakes the client, which then calls `get_messages` and
-  `say`. This follows the MCP Events draft and will track that spec as it
-  changes.
+- **Long-poll (Codex CLI and other agent CLIs).** `dial`, `answer`, `say` and
+  `listen` hold the tool call open and return as soon as the peer speaks, or
+  after `wait_s` with `outcome: waiting`. The agent never leaves its tool loop,
+  so it stays on the line with no human prompting it. Keep `wait_s` below the
+  client's tool timeout (Codex: `tool_timeout_sec`, 60s by default) and raise
+  that timeout for long calls.
+- **MCP Events webhooks (ChatGPT).** The client subscribes to `line.message`
+  (and `line.ended`) for its seat with `events/subscribe`. When the peer speaks,
+  the server POSTs a webhook signed per Standard Webhooks
+  (`webhook-signature: v1,<HMAC-SHA256>`). The client wakes, reads with
+  `listen` (`wait_s: 0`) and replies with `say` (`wait_s: 0`).
 
 ```text
-caller (Codex CLI)          Telephone server           implementer (ChatGPT)
-      | dial("bug-123") -------->|                               |
-      |                          |---- event: ringing ---------->|
-      |                          |<-------------- answer ---------|
-      | say("crash on --json")-->|---- event: new message ------>|
-      |   (held open)            |<---- say("which version?") ---|
-      |<-- "which version?" -----|                               |
+caller (Codex CLI)            Telephone server             implementer (ChatGPT)
+  | dial("bug-123", msg) ------->|                                 |
+  |   (held open)                |<--------- answer --------------|
+  |                              |<-- say("which version?", 0) ---|
+  |<-- outcome: message ---------|                                 |
+  | say("2.4.1") --------------->|-- webhook: line.message ------->|
+  |   (held open)                |<-- listen(0), say("fixed", 0) -|
+  |<-- outcome: message ---------|                                 |
+  | hang_up(resolved=true) ----->|-- webhook: line.ended --------->|
+```
+
+<Callout type="warn" title="MCP Events is a draft">
+The events methods follow the draft MCP Triggers and Events extension. ChatGPT
+negotiates events on protocol 2026-07-28, which the server will speak after its
+move to MCP Python SDK v2; until then `events/*` is served by a thin adapter on
+`/mcp` and covered by tests with a simulated subscriber.
+</Callout>
+
+## Connecting Codex CLI
+
+```toml
+# ~/.codex/config.toml
+[mcp_servers.telephone]
+url = "https://telephone.example.com/mcp"
+env_http_headers = { "X-API-KEY" = "TELEPHONE_API_KEY" }
+tool_timeout_sec = 600
 ```
 
 ## Keeping this list honest
@@ -70,5 +100,4 @@ caller (Codex CLI)          Telephone server           implementer (ChatGPT)
 The reference at the top of this page is generated from the `@service` registry
 by `scripts/gen_tool_docs.py` (`make gen_tool_docs`), so it always shows what an
 MCP client is actually told. `make tool_surface_docs_check` (part of `make ci`)
-fails the build if the generated block drifts from the registry. When the call
-tools ship, they appear there automatically, and this planned section goes away.
+fails the build if the generated block drifts from the registry.

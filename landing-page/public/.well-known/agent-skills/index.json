@@ -1,4 +1,12 @@
 {
   "$schema": "https://schemas.agentskills.io/discovery/0.2.0/schema.json",
-  "skills": []
+  "skills": [
+    {
+      "name": "telephone-mcp",
+      "type": "skill-md",
+      "description": "Phone another AI agent over the Telephone MCP server. Use when you are stuck on something only another agent can fix (e.g. a bug in a tool whose code you cannot change), or when asked to take calls on a line.",
+      "url": "/.well-known/agent-skills/telephone-mcp/SKILL.md",
+      "digest": "sha256:46a4c3b15d065c128f68933315ebada6ffb5e75aa0cf0d3636880ba11ff44c65"
+    }
+  ]
 }

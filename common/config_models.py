@@ -297,3 +297,26 @@ class FeaturesConfig(BaseModel):
     """Feature flags configuration."""
 
     model_config = {"extra": "allow"}  # Allow arbitrary flags
+
+
+class TelephoneEventsConfig(BaseModel):
+    """MCP Events (signed webhook) delivery settings for the switchboard."""
+
+    allow_insecure_callbacks: bool = False
+    default_ttl_s: int = Field(default=3600, ge=60)
+    max_ttl_s: int = Field(default=604800, ge=60)
+    max_attempts: int = Field(default=4, ge=1)
+    backoff_s: list[float] = Field(default_factory=lambda: [1.0, 5.0, 30.0])
+    request_timeout_s: float = Field(default=10.0, gt=0)
+
+
+class TelephoneConfig(BaseModel):
+    """Switchboard settings (loaded from telephone.yaml)."""
+
+    default_wait_s: float = Field(default=50.0, ge=0)
+    max_wait_s: float = Field(default=540.0, ge=0)
+    heartbeat_s: float = Field(default=10.0, gt=0)
+    max_turns: int = Field(default=60, ge=2)
+    idle_timeout_s: float = Field(default=900.0, gt=0)
+    transcript_dir: str | None = ".telephone/transcripts"
+    events: TelephoneEventsConfig = Field(default_factory=TelephoneEventsConfig)

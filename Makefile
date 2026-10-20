@@ -385,3 +385,10 @@ requirements:
 	@echo "$(YELLOW)🔍Checking requirements...$(RESET)"
 	@cp requirements-dev.lock requirements.txt
 	@echo "$(GREEN)✅Requirements checked.$(RESET)"
+
+.PHONY: eval_codex_call eval_codex_call_fake
+eval_codex_call: check_uv ## Eval: two Codex CLIs on a telephone call fix a planted acme-cli bug (needs codex + OpenAI auth; NOT in make ci)
+	@uv run python tests/evals/codex_phone_call/run_eval.py --agents codex $(ARGS)
+
+eval_codex_call_fake: check_uv ## Same eval with scripted agents (no LLM) to validate the harness and server
+	@uv run python tests/evals/codex_phone_call/run_eval.py --agents fake $(ARGS)

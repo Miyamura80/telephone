@@ -1,0 +1,35 @@
+########################################################
+# Telephone switchboard
+########################################################
+# Lines live in process memory: run a single server process (one replica,
+# one uvicorn worker) so both participants reach the same switchboard.
+
+# Seconds a blocking call (dial / answer / say / listen) waits for the peer
+# when the caller does not pass wait_s. Keep it under the MCP client's tool
+# timeout: Codex CLI defaults to 60s (`tool_timeout_sec`).
+default_wait_s: 50
+# Upper bound on any requested wait_s.
+max_wait_s: 540
+# Seconds between progress heartbeats sent while an MCP call is waiting.
+heartbeat_s: 10
+# A call ends automatically after this many messages ("perpetual motion" guard).
+max_turns: 60
+# A call ends automatically after this many seconds with no activity.
+idle_timeout_s: 900
+# Directory for per-call JSONL transcripts (relative to the server's working
+# directory).
+# Set to null to disable transcripts.
+transcript_dir: ".telephone/transcripts"
+
+# MCP Events (draft spec): signed webhook delivery for event-driven clients
+# such as ChatGPT.
+events:
+  # Allow http:// and private-network callback URLs. Only for local testing.
+  allow_insecure_callbacks: false
+  # Subscription lifetime when the client does not ask for one, and the cap.
+  default_ttl_s: 3600
+  max_ttl_s: 604800
+  # Delivery attempts per event before giving up, and the backoff schedule.
+  max_attempts: 4
+  backoff_s: [1, 5, 30]
+  request_timeout_s: 10

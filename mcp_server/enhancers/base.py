@@ -4,8 +4,11 @@ Provides capability detection, content emission helpers, and elicitation
 passthrough while keeping the pure service callable via `tool.call()`.
 """
 
+import asyncio
+import contextvars
 import os
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 
 from mcp.server.elicitation import ElicitationResult
 from mcp.server.fastmcp.server import Context
@@ -19,6 +22,11 @@ from mcp.types import (
     TextContent,
 )
 from pydantic import BaseModel
+
+# Long-blocking service calls (a telephone `listen` can wait minutes for the
+# other agent) run on their own pool so they never starve the default thread
+# pool that metering and FastAPI's sync routes share.
+_BLOCKING_POOL = ThreadPoolExecutor(max_workers=256, thread_name_prefix="mcp-wait")
 
 
 def build_app_meta(resource_uri: str) -> dict:
@@ -69,6 +77,24 @@ class EnhancedTool[TInput: BaseModel, TOutput: BaseModel]:
         )
         self.call_result = result
         return result
+
+    async def call_with_heartbeat(self, interval_s: float, message: str) -> TOutput:
+        """Run a blocking service call off the event loop, pinging progress while it waits.
+
+        The progress notifications keep long waits visibly alive for clients
+        that sent a ``progressToken``; others ignore them. The service runs in
+        a copy of the current context so ``current_user`` still resolves.
+        """
+        loop = asyncio.get_running_loop()
+        context = contextvars.copy_context()
+        future = loop.run_in_executor(_BLOCKING_POOL, context.run, self.call)
+        started = loop.time()
+        while True:
+            done, _ = await asyncio.wait({future}, timeout=interval_s)
+            if done:
+                return future.result()
+            elapsed = round(loop.time() - started)
+            await self._ctx.report_progress(progress=elapsed, message=message)
 
     @property
     def can_elicit(self) -> bool:

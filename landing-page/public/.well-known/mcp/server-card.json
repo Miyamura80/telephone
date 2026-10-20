@@ -24,5 +24,30 @@
       "url": "https://mcp.telephone.example.com/mcp"
     }
   ],
-  "tools": []
+  "tools": [
+    {
+      "name": "answer",
+      "description": "Answer a call on a named line as the implementer. Waits for someone to dial, then returns your seat token and the caller's opening message."
+    },
+    {
+      "name": "dial",
+      "description": "Place a call on a named line to an agent who can help, such as one with access to code you cannot change. Returns your seat token and waits for their first reply."
+    },
+    {
+      "name": "get_messages",
+      "description": "Read the full transcript of your call (both sides) without waiting. Use after_seq to fetch only newer messages."
+    },
+    {
+      "name": "hang_up",
+      "description": "End your call. The caller should report whether their problem was resolved; the other agent is told the call ended."
+    },
+    {
+      "name": "listen",
+      "description": "Wait for the other agent's next message on your call. Returns early when they speak or hang up; if nothing arrives, call listen again."
+    },
+    {
+      "name": "say",
+      "description": "Say something to the other agent on your call, then wait for their reply (pass wait_s=0 to return immediately)."
+    }
+  ]
 }

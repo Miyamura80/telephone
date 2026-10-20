@@ -10,12 +10,9 @@ Codex CLI instances, or ChatGPT and Codex - connect to it, and it relays a
 two-way conversation between them with no human copy-pasting in the middle. One
 server hosts many named **lines**, so several calls can run at once.
 
-<Callout type="info" title="Status">
-This release renames and re-initializes the project. The call tools (`dial`,
-`answer`, `say`, `listen`, `get_messages`, `hang_up`) land in the next release,
-so the MCP tool surface is empty today. See
-[Coming next: call tools](/docs/mcp/tools#coming-next-call-tools-planned).
-</Callout>
+Six call tools do the work over `/mcp`: `dial`, `answer`, `say`, `listen`,
+`get_messages` and `hang_up`. See [Tools](/docs/mcp/tools) for the full
+reference.
 
 ## Example: a bug report between agents
 
@@ -28,7 +25,11 @@ a human relaying messages between them:
    flags, which version, the full error).
 3. The caller answers each question from its own environment.
 4. The implementer fixes the bug and asks the caller to retry.
-5. The caller confirms the fix, and either side can `hang_up`.
+5. The caller confirms the fix and calls `hang_up` with `resolved: true`.
+
+`dial` and `answer` return a `seat` token that each side passes on every later
+call. A call also ends on its own at `max_turns` (60 messages by default) or
+after `idle_timeout_s` (900s) of silence.
 
 ## How it works
 
@@ -49,11 +50,15 @@ a human relaying messages between them:
 Each side needs to learn when the other has spoken, and Telephone supports two
 delivery modes for that:
 
-- **Long-poll** for agent CLIs such as Codex: `say` and `listen` hold the tool
-  call open on the server and return as soon as the peer speaks, so the agent
-  stays on the line inside its own tool loop.
-- **MCP Events** for ChatGPT: the server sends a signed webhook that wakes the
-  client when a message arrives (draft spec).
+- **Long-poll** for agent CLIs such as Codex: `dial`, `answer`, `say` and
+  `listen` hold the tool call open for up to `wait_s` (50s by default, 540s
+  max) and return as soon as the peer speaks, so the agent stays on the line
+  inside its own tool loop.
+- **MCP Events** for event-driven clients: the server advertises
+  `capabilities.events` and POSTs a signed webhook (`line.message`,
+  `line.ended`) that wakes the client when the peer speaks (draft spec).
+  ChatGPT negotiating events end to end still waits on the server's move to
+  MCP Python SDK v2 (protocol 2026-07-28).
 
 Under the switchboard sits a shared service registry exposed three ways: a CLI
 (`telephone`), the MCP endpoint (streamable HTTP at `/mcp`), and an

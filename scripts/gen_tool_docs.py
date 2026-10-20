@@ -62,7 +62,24 @@ class Group:
 # Editorial grouping. Order here is the order on the page. Every tool in the
 # surface must appear exactly once; `_check_grouping` raises if one is missing or
 # listed twice, so adding a @service fails loudly here rather than vanishing.
-GROUPS: tuple[Group, ...] = ()
+GROUPS: tuple[Group, ...] = (
+    Group(
+        heading="Placing and taking calls",
+        intro=(
+            "Two agents meet on a named line. The caller `dial`s, the implementer "
+            "`answer`s, and both pass\ntheir seat token on every later call."
+        ),
+        tools=("dial", "answer", "say", "listen", "get_messages", "hang_up"),
+        outro=(
+            '<Callout type="info">\n'
+            "`dial`, `answer`, `say` and `listen` wait up to `wait_s` for the other "
+            "agent, so a client that\ncannot be woken by the server (Codex CLI) "
+            "hears the reply as the tool result. Event-driven\nclients (ChatGPT) "
+            "pass `wait_s: 0` and subscribe to `line.message` through MCP Events.\n"
+            "</Callout>"
+        ),
+    ),
+)
 
 
 class DriftError(RuntimeError):
@@ -121,8 +138,8 @@ def _render(surface: dict[str, str]) -> str:
         "**UI** render an interactive MCP App in clients that support it and fall",
         "back to plain structured output everywhere else.",
         "",
-        "Every tool takes a `user_id` that the server injects from the authenticated",
-        "principal - clients never pass it.",
+        "Any tool that takes a `user_id` gets it from the authenticated principal -",
+        "clients never pass it.",
         "",
     ]
 

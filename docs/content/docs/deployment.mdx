@@ -21,8 +21,11 @@ one-click to Render, from the repo on Railway, or run the container yourself.
 Render provisions the backend (FastAPI + MCP at `/mcp`) as a Docker service plus
 a managed Postgres database, runs Alembic migrations, and prompts for the
 required secrets. A direct Railway deploy from the repo creates only the backend
-service: add a Postgres service yourself and set `BACKEND_DB_URI` (see the
-variable map below). The landing page (`landing-page/`) deploys separately and is
+service and none of the template defaults: add a Postgres service yourself and
+set `BACKEND_DB_URI`, `DEV_ENV=prod`, a random `SESSION_SECRET_KEY` (the app
+refuses to start in prod with the default), `MCP_PUBLIC_URL`, and the WorkOS
+variables (`WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, `WORKOS_AUTHKIT_DOMAIN`). The
+variable map below lists each one. The landing page (`landing-page/`) deploys separately and is
 not included.
 
 <Callout title="Forking this repo?">

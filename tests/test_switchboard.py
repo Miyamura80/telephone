@@ -193,6 +193,19 @@ class TestSwitchboardRegressions(TestTemplate):
         assert fresh == []
         assert [m.text for m in board.wait_for_peer("bug-1", caller, 0)[2]] == ["reply"]
 
+    def test_abandoned_answer_claims_no_seat(self):
+        board = Switchboard()
+        board.dial("bug-1", "help")
+        event = threading.Event()
+        event.set()
+        token = bind_cancel_event(event)
+        try:
+            assert board.answer("bug-1", wait_s=5) is None
+        finally:
+            unbind_cancel_event(token)
+        # The seat is still free for the implementer who is really there.
+        assert board.answer("bug-1", wait_s=0) is not None
+
     def test_non_ascii_seat_is_a_bad_seat(self):
         board = Switchboard()
         _connect(board)

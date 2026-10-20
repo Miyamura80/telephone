@@ -235,6 +235,14 @@ class LineEvents:
         )
         with self._lock:
             self._subs[sub_id] = sub
+        # A hang_up between the check above and registration would emit
+        # line.ended to no one; re-check now that the subscription is visible.
+        if self._board.transcript(args.line, args.seat, after_seq=10**9).status == (
+            "ended"
+        ):
+            with self._lock:
+                self._subs.pop(sub_id, None)
+            raise EventsError(f"the call on line {args.line!r} has already ended")
         return SubscribeResult(
             id=sub_id,
             expires_at=_iso(sub.expires_at),
@@ -292,6 +300,9 @@ class LineEvents:
         """One delivery attempt; retries are scheduled, never slept in a worker."""
         with self._lock:
             sub = self._subs.get(sub_id)
+            if sub is not None and sub.expires_at < time.time():
+                del self._subs[sub_id]
+                sub = None
         if sub is None:  # unsubscribed, expired, or dropped since queued
             return
         body = json.dumps(payload, separators=(",", ":")).encode()

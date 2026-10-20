@@ -31,6 +31,7 @@ from api_server.server import app
 from common import global_config
 from db import engine as db_engine
 from db.base import Base
+from mcp_server.events import MAX_BODY_BYTES
 from services.line_events import line_events
 from services.switchboard import switchboard
 from tests.test_template import TestTemplate
@@ -206,20 +207,22 @@ class TestTwoAgentsOnTheWire(TestTemplate):
                 session, "dial", {"line": "slow", "message": "hi", "wait_s": 0}
             )
             dialed.set()
+            started = time.monotonic()
             await _session_call(
                 session,
                 "listen",
                 {"line": "slow", "seat": view["seat"], "wait_s": 3},
             )
+            return started, time.monotonic()
 
         async def prober(session):
             assert dialed is not None
             await dialed.wait()  # the line exists; the dial is not raced
-            await asyncio.sleep(0.3)  # let the waiter's listen start blocking
+            await asyncio.sleep(0.3)
             started = time.monotonic()
             view = await _session_call(session, "answer", {"line": "slow", "wait_s": 0})
             assert view["outcome"] == "message"
-            return time.monotonic() - started
+            return started, time.monotonic()
 
         async def main():
             nonlocal dialed
@@ -228,8 +231,35 @@ class TestTwoAgentsOnTheWire(TestTemplate):
                 _Agent(base, key).run(waiter), _Agent(base, key).run(prober)
             )
 
-        _, probe_s = asyncio.run(asyncio.wait_for(main(), 30))
-        assert probe_s < 2
+        (listen_start, listen_end), (probe_start, probe_end) = asyncio.run(
+            asyncio.wait_for(main(), 30)
+        )
+        # The probe ran entirely inside the listen's 3s wait, and fast.
+        assert listen_start < probe_start and probe_end < listen_end
+        assert probe_end - probe_start < 2
+
+
+class TestEventsWrapperEdges(TestTemplate):
+    def test_oversized_body_is_rejected(self, server):
+        base, key = server
+        resp = httpx.post(
+            f"{base}/mcp",
+            headers={"X-API-KEY": key, "content-type": "application/json"},
+            content=b"x" * (MAX_BODY_BYTES + 1),
+            timeout=10,
+        )
+        assert resp.status_code == 413
+
+    def test_non_string_method_passes_through(self, server):
+        base, key = server
+        resp = httpx.post(
+            f"{base}/mcp",
+            headers={"X-API-KEY": key, "Accept": "application/json, text/event-stream"},
+            json={"jsonrpc": "2.0", "id": 1, "method": 5, "params": {}},
+            timeout=10,
+        )
+        # FastMCP answers the malformed request; the wrapper does not crash.
+        assert resp.status_code < 500
 
 
 def _rpc(base: str, key: str, method: str, params: dict) -> dict:

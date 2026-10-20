@@ -185,6 +185,8 @@ class Switchboard:
         deadline = self._clock() + wait_s
         with self._cond:
             while True:
+                if is_cancelled():  # abandoned: never claim a seat for no one
+                    return None
                 call = self._live_call(line)
                 if call is not None:
                     if "implementer" in call.seats:

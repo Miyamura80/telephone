@@ -137,6 +137,46 @@ class TestLineEvents(TestTemplate):
         board.say("ev", implementer, "hello")
         assert sent == []
 
+    def test_retry_after_expiry_is_not_sent(self):
+        board, events, sub, implementer, sent, _ = _setup([500, 200])
+        sender = events._sender
+
+        def expiring_sender(url, body, headers):
+            events._subs[sub.id].expires_at = 0  # the TTL lapses mid-retry
+            return sender(url, body, headers)
+
+        events._sender = expiring_sender
+        board.say("ev", implementer, "hello")
+        assert len(sent) == 1
+        assert events._subs == {}
+
+    def test_subscribe_racing_hang_up_is_rejected(self):
+        board, events, sub, implementer, _, _ = _setup([])
+        caller = events._subs[sub.id].seat
+        real = board.transcript
+        calls = 0
+
+        def transcript(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:  # the call ends between the check and registration
+                board.hang_up("ev", implementer, "done", None)
+            return real(*args, **kwargs)
+
+        params = SubscribeParams.model_validate(
+            {
+                "name": "line.ended",
+                "arguments": {"line": "ev", "seat": caller},
+                "delivery": {"url": "http://localhost/other", "secret": SECRET},
+            }
+        )
+        with (
+            patch.object(board, "transcript", transcript),
+            pytest.raises(EventsError, match="already ended"),
+        ):
+            events.subscribe(params, owner="u1")
+        assert list(events._subs) == [sub.id]
+
     def test_unsubscribe_requires_the_owner(self):
         _, events, sub, _, _, _ = _setup([])
         with pytest.raises(EventsError):

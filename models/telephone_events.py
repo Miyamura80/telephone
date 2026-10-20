@@ -5,15 +5,15 @@ the design sketch and what ChatGPT implements (webhook delivery only, signed
 per Standard Webhooks). See ``services/line_events.py``.
 """
 
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from models.telephone import LINE_PATTERN
 
-LINE_MESSAGE = "line.message"
-LINE_ENDED = "line.ended"
+EventName = Literal["line.message", "line.ended"]
+LINE_MESSAGE, LINE_ENDED = get_args(EventName)
 
 
 class _Wire(BaseModel):
@@ -37,7 +37,7 @@ class WebhookDelivery(BaseModel):
 
 
 class SubscribeParams(_Wire):
-    name: Literal["line.message", "line.ended"]
+    name: EventName
     arguments: LineEventArguments
     delivery: WebhookDelivery
     ttl_ms: int | None = Field(default=None, ge=1)

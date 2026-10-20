@@ -91,6 +91,10 @@ make eval_codex_call_fake   # scripted caller and implementer, no LLM
 make eval_codex_call        # two real Codex CLIs fix a broken acme-cli
 ```
 
+`make eval_codex_call` is experimental and not part of `make ci`: it needs the
+Codex CLI on your `PATH` and OpenAI auth configured for it, and a run with real
+Codex CLIs has not been published yet. The scripted `_fake` target needs neither.
+
 ## Next steps
 
 <Cards>

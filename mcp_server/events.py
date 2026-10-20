@@ -60,7 +60,9 @@ def _dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
 
 async def _handle(rpc: dict[str, Any]) -> dict[str, Any]:
     reply: dict[str, Any] = {"jsonrpc": "2.0", "id": rpc.get("id")}
-    params = rpc.get("params") or {}
+    params = rpc.get("params")
+    if params is None:  # absent; a supplied [] or false is still rejected below
+        params = {}
     if not isinstance(params, dict):
         reply["error"] = {
             "code": _INVALID_REQUEST,

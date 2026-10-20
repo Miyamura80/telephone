@@ -1,6 +1,7 @@
 """Unit tests for MCP Events delivery (retries, drops, expiry, signing)."""
 
 import base64
+import json
 import socket
 from concurrent.futures import Executor, Future
 from unittest.mock import patch
@@ -103,6 +104,35 @@ class TestLineEvents(TestTemplate):
         board.say("ev", implementer, "small")
         assert len(sent) == 2 and sleeps == []
         assert sub.id in events._subs
+
+    def test_gives_up_after_max_attempts(self):
+        board, events, sub, implementer, sent, sleeps = _setup([500] * 10)
+        board.say("ev", implementer, "hello")
+        cfg = global_config.telephone.events
+        assert len(sent) == cfg.max_attempts
+        assert len(sleeps) == cfg.max_attempts - 1
+        assert sub.id in events._subs  # a failed event does not drop the sub
+
+    def test_line_ended_is_delivered(self):
+        board, events, sub, implementer, _, _ = _setup([])
+        params = SubscribeParams.model_validate(
+            {
+                "name": "line.ended",
+                "arguments": {"line": "ev", "seat": events._subs[sub.id].seat},
+                "delivery": {"url": "http://localhost/hook", "secret": SECRET},
+            }
+        )
+        events.subscribe(params, owner="u1")
+        bodies: list[dict] = []
+
+        def sender(url, body, headers):
+            bodies.append(json.loads(body))
+            return 200
+
+        events._sender = sender
+        board.hang_up("ev", implementer, "fixed it", None)
+        ended = [b for b in bodies if b["name"] == "line.ended"]
+        assert len(ended) == 1 and "fixed it" in ended[0]["data"]["reason"]
 
     def test_no_delivery_after_unsubscribe(self):
         board, events, sub, implementer, sent, _ = _setup([500])

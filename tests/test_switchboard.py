@@ -157,8 +157,11 @@ class TestSwitchboard(TestTemplate):
             raise RuntimeError("listener down")
 
         board.add_listener(boom)
-        _, caller, _ = _connect(board)
+        _, caller, implementer = _connect(board)
+        board.wait_for_peer("bug-1", implementer, 0)  # the opening message
         board.say("bug-1", caller, "still works")
+        _, _, fresh = board.wait_for_peer("bug-1", implementer, 0)
+        assert [m.text for m in fresh] == ["still works"]
 
     def test_transcript_file_records_the_call(self, tmp_path):
         board = Switchboard()

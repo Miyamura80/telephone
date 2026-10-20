@@ -57,14 +57,14 @@ curl https://mcp.telephone.example.com/
     "url": "https://mcp.telephone.example.com/mcp",
     "transport": "streamable-http",
     "authentication": { "required": true, "schemes": ["oauth2", "api_key"] },
-    "tools": ["dial", "answer", "say", "listen", "get_messages", "hang_up"]
+    "tools": ["answer", "dial", "get_messages", "hang_up", "listen", "say"]
   },
   "endpoints": { "mcp": "...", "health": "...", "server_card": "..." }
 }
 ```
 
-`mcp.tools` lists the tools served over MCP, straight from the registry: the six
-call tools `dial`, `answer`, `say`, `listen`, `get_messages` and `hang_up`.
+`mcp.tools` lists the tools served over MCP, straight from the registry and
+sorted by name: the six call tools.
 
 Browsers (`Accept: text/html`) get a small landing page with the same content.
 

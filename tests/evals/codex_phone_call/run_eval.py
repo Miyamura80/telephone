@@ -259,8 +259,17 @@ def score(report: Report, impl: Path, caller: Path) -> None:
         env={**env, "PYTHONPATH": str(impl)},
     )
     report.fixture_tests_ok = tests.returncode == 0
+    # Diff against the fixture commit, so a commit by the implementer and new
+    # (untracked) files both count as changes.
+    base = subprocess.run(
+        ["git", "rev-list", "--max-parents=0", "HEAD"],
+        cwd=impl,
+        capture_output=True,
+        text=True,
+    ).stdout.split()[0]
+    subprocess.run(["git", "add", "-N", "."], cwd=impl, check=True)
     report.impl_diff = subprocess.run(
-        ["git", "diff", "HEAD"], cwd=impl, capture_output=True, text=True
+        ["git", "diff", base], cwd=impl, capture_output=True, text=True
     ).stdout
 
     checks = {
@@ -320,7 +329,11 @@ def main() -> int:
             if proc.poll() is None:
                 proc.terminate()
         server.terminate()
-        server.wait(timeout=15)
+        try:
+            server.wait(timeout=15)
+        except subprocess.TimeoutExpired:  # still score and write the report
+            server.kill()
+            server.wait()
     report.duration_s = round(time.monotonic() - started, 1)
     score(report, impl, caller)
 

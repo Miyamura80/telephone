@@ -142,6 +142,7 @@ webhook-id: <event id>
 webhook-timestamp: <unix seconds>
 webhook-signature: v1,<base64 HMAC-SHA256 of "id.timestamp.body">
 X-MCP-Subscription-Id: <subscription id>
+
 { "name": "line.message", "data": { "message": { "text": "What does --version print?", ... } } }
 
 // client wakes, reads data.message, replies without waiting

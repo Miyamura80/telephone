@@ -114,7 +114,7 @@ class TestCallbackVerification(TestTemplate):
         class Endless:
             status_code = 200
 
-            def iter_bytes(self):
+            def iter_raw(self):
                 while True:
                     served.append(1)
                     yield b"x" * 8192
@@ -131,12 +131,16 @@ class TestCallbackVerification(TestTemplate):
 
             @contextmanager
             def stream(self, method, url, content, headers, extensions):
+                sent_headers.update(headers)
                 yield Endless()
 
+        sent_headers: dict = {}
         with patch("services.line_events.httpx.Client", StreamClient):
             status, reply = _http_post("http://localhost/cb", b"{}", {})
         assert status == 200 and len(reply) == 64 * 1024
         assert len(served) == 8  # stopped reading at the cap
+        # Raw bytes, no compression: the cap counts what crosses the wire.
+        assert sent_headers["accept-encoding"] == "identity"
 
     def test_unsubscribe_rejects_mixed_or_partial_selectors(self):
         with pytest.raises(ValueError):
@@ -167,7 +171,16 @@ class TestCallbackVerification(TestTemplate):
         params.ttl_ms = 60_000
         sub = events.subscribe(params, owner="u1")
         assert events._subs[sub.id].expires_at == 1030.0 + 60
+        challenges = len(events._verified)
+        assert challenges == 1
         clock[0] += global_config.telephone.events.verification_cache_s + 1
         with events._lock:
             events._prune_expired_locked(clock[0])
         assert events._verified == {}
+
+        # A refresh after the window goes through subscribe() and challenges again.
+        calls = []
+        events._verifier = lambda u, b, h: calls.append(u) or _echo(u, b, h)
+        events.subscribe(params, owner="u1")
+        assert calls == [params.delivery.url]
+        assert events._verified[("u1", params.delivery.url)] == clock[0]

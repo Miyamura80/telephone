@@ -350,7 +350,7 @@ class TestCallbackGuard(TestTemplate):
             @contextmanager
             def stream(self, method, url, content, headers, extensions):
                 seen.update(url=url, headers=headers, extensions=extensions)
-                yield type("R", (), {"status_code": 204, "iter_bytes": lambda s: []})()
+                yield type("R", (), {"status_code": 204, "iter_raw": lambda s: []})()
 
         with (
             patch.object(

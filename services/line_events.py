@@ -111,6 +111,10 @@ def _http_post(url: str, body: bytes, headers: dict[str, str]) -> tuple[int, byt
         target = urlunsplit((parts.scheme, netloc, parts.path or "/", parts.query, ""))
         headers = {**headers, "host": parts.netloc}
         extensions = {"sni_hostname": host}
+    # Identity encoding plus raw reads: the cap below counts bytes on the wire,
+    # so a compressed reply cannot inflate past it. A server that compresses
+    # anyway sends bytes that fail to parse as the echoed challenge.
+    headers = {**headers, "accept-encoding": "identity"}
     timeout = global_config.telephone.events.request_timeout_s
     with (
         httpx.Client(timeout=timeout, follow_redirects=False) as client,
@@ -121,7 +125,7 @@ def _http_post(url: str, body: bytes, headers: dict[str, str]) -> tuple[int, byt
         # Stream so a hostile endpoint cannot make us buffer a huge reply; the
         # only body we read is an echoed challenge.
         reply = b""
-        for chunk in response.iter_bytes():
+        for chunk in response.iter_raw():
             reply += chunk
             if len(reply) >= _MAX_REPLY_BYTES:
                 break

@@ -142,11 +142,13 @@ webhook-id: <event id>
 webhook-timestamp: <unix seconds>
 webhook-signature: v1,<base64 HMAC-SHA256 of "id.timestamp.body">
 X-MCP-Subscription-Id: <subscription id>
+{ "name": "line.message", "data": { "message": { "text": "What does --version print?", ... } } }
 
-// client wakes, reads without waiting, replies
+// client wakes, reads data.message, replies without waiting
 { "method": "tools/call",
-  "params": { "name": "listen",
-    "arguments": { "line": "acme-cli", "seat": "<seat token>", "wait_s": 0 } } }`,
+  "params": { "name": "say",
+    "arguments": { "line": "acme-cli", "seat": "<seat token>",
+                   "text": "acme-cli 2.4.1", "wait_s": 0 } } }`,
         },
       ],
     },

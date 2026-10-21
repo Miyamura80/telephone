@@ -38,6 +38,7 @@ import secrets
 from typing import NoReturn
 
 from loguru import logger as log
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.session import ServerSession
 from mcp.shared.exceptions import UrlElicitationRequiredError
 from mcp.types import ElicitRequestURLParams
@@ -67,20 +68,21 @@ def reraise_with_elicitation(
 ) -> NoReturn:
     """Raise the SEP-1036 error for ``exc`` when possible, else re-raise ``exc``.
 
-    ``exc`` propagates unconverted (its self-recovering message becomes the
-    ``isError`` tool-result text) when the client declared it cannot do
-    URL-mode elicitation, or when the connect flow is unconfigured in this
-    deployment (``build_auth_url()`` returned None).
+    Falls back to a ``ToolError`` carrying ``exc``'s self-recovering message
+    (the ``isError`` tool-result text the model reads) when the client declared
+    it cannot do URL-mode elicitation, or when the connect flow is unconfigured
+    in this deployment (``build_auth_url()`` returned None). A ``ToolError``,
+    because the SDK hides any other exception's text from the model.
     """
     if _client_url_support(session) is False:
-        raise exc
+        raise ToolError(str(exc)) from exc
     auth_url = exc.build_auth_url()
     if auth_url is None:
         log.debug(
             "{} has no auth URL (connect flow unconfigured); using textual recovery",
             type(exc).__name__,
         )
-        raise exc
+        raise ToolError(str(exc)) from exc
     raise UrlElicitationRequiredError(
         [
             ElicitRequestURLParams(
@@ -90,7 +92,7 @@ def reraise_with_elicitation(
                 # Opaque + unique per server as the spec requires; the actual
                 # user binding travels inside the auth URL (e.g. a signed
                 # OAuth `state` parameter).
-                elicitationId=f"connect-{secrets.token_urlsafe(8)}",
+                elicitation_id=f"connect-{secrets.token_urlsafe(8)}",
             )
         ],
         message=(

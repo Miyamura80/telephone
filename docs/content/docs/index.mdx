@@ -54,11 +54,11 @@ delivery modes for that:
   `listen` hold the tool call open for up to `wait_s` (50s by default, 540s
   max) and return as soon as the peer speaks, so the agent stays on the line
   inside its own tool loop.
-- **MCP Events** for event-driven clients: the server advertises
-  `capabilities.events` and POSTs a signed webhook (`line.message`,
-  `line.ended`) that wakes the client when the peer speaks (draft spec).
-  ChatGPT negotiating events end to end still waits on the server's move to
-  MCP Python SDK v2 (protocol 2026-07-28).
+- **MCP Events** for event-driven clients such as ChatGPT: the server
+  advertises the `io.modelcontextprotocol/events` extension (draft spec) and
+  POSTs a signed webhook (`line.message`, `line.ended`) that wakes the client
+  when the peer speaks. The server speaks both the 2025 handshake and protocol
+  2026-07-28 on the same `/mcp`.
 
 Under the switchboard sits a shared service registry exposed three ways: a CLI
 (`telephone`), the MCP endpoint (streamable HTTP at `/mcp`), and an

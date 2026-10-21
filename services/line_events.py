@@ -57,6 +57,18 @@ class EventsError(ValueError):
     """Invalid subscribe/unsubscribe request; maps to JSON-RPC -32602."""
 
 
+class CallbackError(EventsError):
+    """The callback failed verification; maps to -32015 with ``data.reason``.
+
+    ``reason`` is one of the categories ChatGPT surfaces: ``challenge_failed``,
+    ``timeout``, ``connection_failed`` or ``blocked_address``.
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(f"callback endpoint error: {reason}")
+        self.reason = reason
+
+
 @dataclass
 class Subscription:
     id: str
@@ -70,10 +82,19 @@ class Subscription:
 
 
 Sender = Callable[[str, bytes, dict[str, str]], int]
+# Like Sender, but also returns the response body (the echoed challenge).
+Verifier = Callable[[str, bytes, dict[str, str]], tuple[int, bytes]]
 Scheduler = Callable[[float, Callable[[], object]], None]
 
 
+_MAX_REPLY_BYTES = 64 * 1024
+
+
 def _http_send(url: str, body: bytes, headers: dict[str, str]) -> int:
+    return _http_post(url, body, headers)[0]
+
+
+def _http_post(url: str, body: bytes, headers: dict[str, str]) -> tuple[int, bytes]:
     """POST to the callback, connecting only to the address the guard approved.
 
     Resolving once in the guard and again inside httpx would leave a DNS
@@ -90,12 +111,25 @@ def _http_send(url: str, body: bytes, headers: dict[str, str]) -> int:
         target = urlunsplit((parts.scheme, netloc, parts.path or "/", parts.query, ""))
         headers = {**headers, "host": parts.netloc}
         extensions = {"sni_hostname": host}
+    # Identity encoding plus raw reads: the cap below counts bytes on the wire,
+    # so a compressed reply cannot inflate past it. A server that compresses
+    # anyway sends bytes that fail to parse as the echoed challenge.
+    headers = {**headers, "accept-encoding": "identity"}
     timeout = global_config.telephone.events.request_timeout_s
-    with httpx.Client(timeout=timeout, follow_redirects=False) as client:
-        response = client.post(
-            target, content=body, headers=headers, extensions=extensions
-        )
-        return response.status_code
+    with (
+        httpx.Client(timeout=timeout, follow_redirects=False) as client,
+        client.stream(
+            "POST", target, content=body, headers=headers, extensions=extensions
+        ) as response,
+    ):
+        # Stream so a hostile endpoint cannot make us buffer a huge reply; the
+        # only body we read is an echoed challenge.
+        reply = b""
+        for chunk in response.iter_raw():
+            reply += chunk
+            if len(reply) >= _MAX_REPLY_BYTES:
+                break
+        return response.status_code, reply[:_MAX_REPLY_BYTES]
 
 
 def _schedule(delay_s: float, fn: Callable[[], object]) -> None:
@@ -148,6 +182,13 @@ def _check_callback_url(url: str) -> str | None:
     return addresses[0]
 
 
+def subscription_id(owner: str, url: str, name: str, line: str, seat: str) -> str:
+    """Deterministic id, so re-subscribing (a refresh) or unsubscribing by key
+    lands on the same subscription."""
+    key = "|".join((owner, url, name, line, seat))
+    return "sub_" + hashlib.sha256(key.encode()).hexdigest()[:24]
+
+
 def _iso(epoch: float) -> str:
     return datetime.fromtimestamp(epoch, UTC).isoformat(timespec="seconds")
 
@@ -163,9 +204,15 @@ class LineEvents:
         sender: Sender = _http_send,
         executor: Executor | None = None,
         schedule: Scheduler = _schedule,
+        verifier: Verifier = _http_post,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         self._board = board
         self._sender = sender
+        self._verifier = verifier
+        self._clock = clock
+        # (owner, url) -> when that callback last answered a challenge.
+        self._verified: dict[tuple[str, str], float] = {}
         self._executor = executor or ThreadPoolExecutor(
             max_workers=4, thread_name_prefix="line-events"
         )
@@ -226,11 +273,20 @@ class LineEvents:
         secret = decode_secret(params.delivery.secret)
         ttl_s = cfg.default_ttl_s if params.ttl_ms is None else params.ttl_ms / 1000
         ttl_s = max(60.0, min(ttl_s, cfg.max_ttl_s))
-        key = "|".join((owner, params.delivery.url, params.name, args.line, args.seat))
-        sub_id = "sub_" + hashlib.sha256(key.encode()).hexdigest()[:24]
-        now = time.time()
+        sub_id = subscription_id(
+            owner, params.delivery.url, params.name, args.line, args.seat
+        )
+        now = self._clock()
         with self._lock:  # an idle server would otherwise keep expired entries
             self._prune_expired_locked(now)
+            verified_at = self._verified.get((owner, params.delivery.url))
+        if cfg.verify_callbacks and (
+            verified_at is None or now - verified_at >= cfg.verification_cache_s
+        ):
+            self._verify(sub_id, params.delivery.url, secret)
+            now = self._clock()  # the TTL starts once the callback is proven
+            with self._lock:
+                self._verified[(owner, params.delivery.url)] = now
         sub = Subscription(
             id=sub_id,
             name=params.name,
@@ -257,6 +313,44 @@ class LineEvents:
             refresh_before=_iso(now + ttl_s * 0.8),
         )
 
+    def _verify(self, sub_id: str, url: str, secret: bytes) -> None:
+        """Prove the callback wants these events before the first delivery.
+
+        POSTs a signed, single-use challenge; the endpoint must answer 2xx with
+        the same challenge echoed back as ``{"challenge": ...}``.
+        """
+        challenge = secrets.token_urlsafe(32)
+        msg_id = f"msg_verification_{secrets.token_hex(8)}"
+        body = json.dumps(
+            {"type": "verification", "challenge": challenge}, separators=(",", ":")
+        ).encode()
+        timestamp = int(time.time())
+        headers = {
+            "content-type": "application/json",
+            "webhook-id": msg_id,
+            "webhook-timestamp": str(timestamp),
+            "webhook-signature": sign(secret, msg_id, timestamp, body),
+            "X-MCP-Subscription-Id": sub_id,
+        }
+        try:
+            status, reply = self._verifier(url, body, headers)
+        except httpx.TimeoutException as exc:
+            raise CallbackError("timeout") from exc
+        except httpx.HTTPError as exc:
+            raise CallbackError("connection_failed") from exc
+        except CallbackError:
+            raise
+        except EventsError as exc:  # the address guard refused it at send time
+            raise CallbackError("blocked_address") from exc
+        try:
+            echoed = json.loads(reply or b"{}").get("challenge")
+        except (ValueError, AttributeError):
+            echoed = None
+        if not (200 <= status < 300 and isinstance(echoed, str)) or not (
+            hmac.compare_digest(echoed.encode(), challenge.encode())
+        ):
+            raise CallbackError("challenge_failed")
+
     def unsubscribe(self, sub_id: str, owner: str) -> None:
         with self._lock:
             sub = self._subs.get(sub_id)
@@ -269,6 +363,7 @@ class LineEvents:
         with self._lock:
             self._subs.clear()
             self._queues.clear()
+            self._verified.clear()
 
     # -- delivery -----------------------------------------------------------
 
@@ -313,6 +408,9 @@ class LineEvents:
     def _prune_expired_locked(self, now: float) -> None:
         for sub_id in [s for s, sub in self._subs.items() if sub.expires_at < now]:
             del self._subs[sub_id]
+        cutoff = now - global_config.telephone.events.verification_cache_s
+        for key in [k for k, at in self._verified.items() if at <= cutoff]:
+            del self._verified[key]
 
     def _payload(self, name: str, event: CallEvent) -> dict:
         data: dict = {"line": event.line, "call_id": event.call_id}

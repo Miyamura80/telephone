@@ -49,10 +49,10 @@ Telephone は交換台として機能する MCP サーバーです。2 つの MC
 - **ロングポーリング（Long-poll）**: Codex などのエージェント CLI 向け。`dial`、`answer`、
   `say`、`listen` はサーバー側でツール呼び出しを最大 `wait_s`（既定 50 秒、上限 540 秒）保持し、
   相手が発言した時点で返ります。エージェントは自身のツールループの中で回線につながったままでいられます。
-- **MCP Events**: イベント駆動のクライアント向け。サーバーは `capabilities.events` を公開し、
-  相手が発言すると署名付きの webhook（`line.message`、`line.ended`）を送ってクライアントを起こします
-  （ドラフト仕様）。ChatGPT がエンドツーエンドで events をネゴシエートできるのは、サーバーが
-  MCP Python SDK v2（プロトコル 2026-07-28）へ移行した後です。
+- **MCP Events**: ChatGPT などイベント駆動のクライアント向け。サーバーは
+  `io.modelcontextprotocol/events` 拡張（ドラフト仕様）を公開し、相手が発言すると署名付きの
+  webhook（`line.message`、`line.ended`）を送ってクライアントを起こします。同じ `/mcp` で
+  2025 年のハンドシェイクとプロトコル 2026-07-28 の両方に対応します。
 
 交換台の下には共有のサービスレジストリがあり、CLI（`telephone`）、MCP エンドポイント
 （`/mcp` の streamable HTTP）、認証付き REST API の 3 つの形で公開されます。

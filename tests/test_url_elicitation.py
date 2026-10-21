@@ -12,6 +12,7 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.session import ServerSession
 from mcp.shared.exceptions import UrlElicitationRequiredError
 from mcp.types import (
@@ -118,7 +119,7 @@ class TestReraiseWithElicitation(TestTemplate):
         assert len(elicitations) == 1
         elic = elicitations[0]
         assert elic.mode == "url"
-        assert elic.elicitationId.startswith("connect-")
+        assert elic.elicitation_id.startswith("connect-")
         assert elic.message == exc.elicitation_message
 
         parsed = urlparse(elic.url)
@@ -138,21 +139,23 @@ class TestReraiseWithElicitation(TestTemplate):
         with pytest.raises(UrlElicitationRequiredError):
             reraise_with_elicitation(_session_with(None), exc)
 
-    def test_reraises_original_when_client_declares_form_only(self):
+    def test_falls_back_to_text_when_client_declares_form_only(self):
         session = _session_with(ClientCapabilities(elicitation=ElicitationCapability()))
         exc = FakeNotConnectedError("user-9")
-        with pytest.raises(FakeNotConnectedError) as excinfo:
+        with pytest.raises(ToolError) as excinfo:
             reraise_with_elicitation(session, exc)
-        assert excinfo.value is exc
+        # The model reads the self-recovering message; the cause is kept.
+        assert str(excinfo.value) == str(exc)
+        assert excinfo.value.__cause__ is exc
 
-    def test_reraises_original_when_unconfigured(self):
+    def test_falls_back_to_text_when_unconfigured(self):
         exc = FakeNotConnectedError("user-10")
         with (
             _unconfigured(),
-            pytest.raises(FakeNotConnectedError) as excinfo,
+            pytest.raises(ToolError) as excinfo,
         ):
             reraise_with_elicitation(_session_with(None), exc)
-        assert excinfo.value is exc
+        assert excinfo.value.__cause__ is exc
 
     def test_elicitation_ids_are_unique(self):
         exc = FakeNotConnectedError("user-11")
@@ -160,5 +163,5 @@ class TestReraiseWithElicitation(TestTemplate):
         for _ in range(3):
             with pytest.raises(UrlElicitationRequiredError) as excinfo:
                 reraise_with_elicitation(_session_with(None), exc)
-            ids.add(excinfo.value.elicitations[0].elicitationId)
+            ids.add(excinfo.value.elicitations[0].elicitation_id)
         assert len(ids) == 3

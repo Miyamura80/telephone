@@ -5,6 +5,7 @@ import json
 import socket
 import time
 from concurrent.futures import Executor, Future, ThreadPoolExecutor
+from contextlib import contextmanager
 from unittest.mock import patch
 
 import pytest
@@ -18,11 +19,18 @@ from services.line_events import (
     _http_send,
     decode_secret,
     sign,
+    subscription_id,
 )
 from services.switchboard import Switchboard
 from tests.test_template import TestTemplate
 
 SECRET = "whsec_" + base64.b64encode(b"k" * 32).decode()
+
+
+def _echo(url, body, headers):
+    """A callback that passes verification: echo the challenge back."""
+    challenge = json.loads(body)["challenge"]
+    return 200, json.dumps({"challenge": challenge}).encode()
 
 
 class InlineExecutor(Executor):
@@ -55,7 +63,11 @@ def _setup(statuses: list[int]):
         fn()
 
     events = LineEvents(
-        board, sender=sender, executor=InlineExecutor(), schedule=schedule
+        board,
+        sender=sender,
+        executor=InlineExecutor(),
+        schedule=schedule,
+        verifier=_echo,
     )
     _, caller = board.dial("ev", "help")
     params = SubscribeParams.model_validate(
@@ -220,7 +232,7 @@ class TestLineEvents(TestTemplate):
             return 200
 
         pool = ThreadPoolExecutor(max_workers=4)
-        events = LineEvents(board, sender=sender, executor=pool)
+        events = LineEvents(board, sender=sender, executor=pool, verifier=_echo)
         _, caller = board.dial("ord", "help")
         for name in ("line.message", "line.ended"):
             events.subscribe(
@@ -268,6 +280,15 @@ class TestLineEvents(TestTemplate):
         with pytest.raises(ValueError):
             SubscribeParams.model_validate({**params, "ttlMs": 10**400})
         assert SECRET not in repr(SubscribeParams.model_validate(params))
+
+    def test_unsubscribe_by_key(self):
+        _, events, sub, _, _, _ = _setup([])
+        seat = events._subs[sub.id].seat
+        events.unsubscribe(
+            subscription_id("u1", "http://localhost/hook", "line.message", "ev", seat),
+            owner="u1",
+        )
+        assert events._subs == {}
 
     def test_unsubscribe_requires_the_owner(self):
         _, events, sub, _, _, _ = _setup([])
@@ -326,9 +347,10 @@ class TestCallbackGuard(TestTemplate):
             def __exit__(self, *exc):
                 return False
 
-            def post(self, url, content, headers, extensions):
+            @contextmanager
+            def stream(self, method, url, content, headers, extensions):
                 seen.update(url=url, headers=headers, extensions=extensions)
-                return type("R", (), {"status_code": 204})()
+                yield type("R", (), {"status_code": 204, "iter_raw": lambda s: []})()
 
         with (
             patch.object(

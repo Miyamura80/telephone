@@ -1,14 +1,13 @@
-"""Run the blocking telephone tools off the event loop with progress heartbeats.
+"""Run the blocking telephone tools on a dedicated pool with progress heartbeats.
 
-FastMCP calls a headless (sync) tool directly on the event loop, so a
-``listen`` that waits minutes for the other agent would stall every other
-request. These enhancers move the wait to a worker thread and send progress
-notifications while it lasts. Non-blocking tools (``get_messages``,
-``hang_up``) run inline, but still on the async path so the per-call quota
-check happens off the event loop.
+The SDK runs a headless (sync) tool on anyio's shared worker threads, which are
+capped (40 by default) and also serve quota checks and every other sync tool.
+A ``listen`` that waits minutes for the other agent would hold one of those
+threads the whole time, so a handful of open calls could starve the server.
+These enhancers move the wait to the dedicated ``_BLOCKING_POOL`` and send
+progress notifications while it lasts. ``get_messages`` and ``hang_up`` never
+block, so they stay headless.
 """
-
-from pydantic import BaseModel
 
 from common import global_config
 from mcp_server.enhancers import enhance
@@ -24,14 +23,6 @@ async def _wait_on_line(tool: EnhancedTool) -> CallView:
     )
 
 
-async def _inline(tool: EnhancedTool) -> BaseModel:
-    return tool.call()
-
-
 # "error": these services mutate the call; never silently re-run them.
 for _name in ("dial", "answer", "say", "listen"):
     enhance(_name, fallback="error")(_wait_on_line)
-# These never block, so they skip the worker pool and are never stuck behind
-# long waits.
-enhance("hang_up", fallback="error")(_inline)
-enhance("get_messages", fallback="error")(_inline)

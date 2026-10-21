@@ -15,7 +15,7 @@ Spec of edge cases for the MCP UI layer (enhancers, elicitation, MCP Apps, rich 
 
 | ID | Scenario | Expected behavior |
 |---|---|---|
-| E1 | Enhancer raises an exception | If `@enhance(fallback="headless")`, log via `loguru.exception` and return the pure service result as a structured response. If `fallback="error"`, propagate (FastMCP returns `isError: true`). |
+| E1 | Enhancer raises an exception | If `@enhance(fallback="headless")`, log via `loguru.exception` and return the pure service result as a structured response, except for a mutating service whose `tool.call()` never completed: that propagates the enhancer error rather than re-running the service. If `fallback="error"`, propagate (expected failures as `ToolError`, so the SDK returns `isError: true` with their text). |
 | E2 | Enhancer hangs or runs >30s | No timeout enforced by the enhancer layer. Tool transport timeouts apply. Enhancers should be fast or use the `tasks` capability (out of scope for this PR). |
 | E3 | Enhancer mutates `tool.input` in place | Forbidden. Use `tool.call(override_input=...)` with `model_copy(update=...)`. Mutation breaks the pure-service invariant. |
 | E4 | Enhancer registered for unknown service name | `get_enhancer()` returns the registration; service registration would skip silently. Tool registration logs a warning at startup if no matching service exists. |
@@ -39,7 +39,7 @@ Spec of edge cases for the MCP UI layer (enhancers, elicitation, MCP Apps, rich 
 | A1 | `dist/mcp-app.html` missing at runtime | Resource handler logs a warning, returns an empty HTML stub with a comment explaining the missing build. Enhancer falls through to non-app response. |
 | A2 | `_meta.ui.resourceUri` set but resource not registered | Client receives a dangling URI. Mitigation: tool registration validates that referenced `ui://` resources exist; fails fast at server start. |
 | A3 | Old host (early ChatGPT Apps SDK) reads only flat `_meta["ui/resourceUri"]` | `EnhancedTool.send_app()` dual-keys both `_meta.ui.resourceUri` and `_meta["ui/resourceUri"]` for compat. |
-| A4 | App-only tool surfaces to LLM | `meta={"ui": {"visibility": ["app"]}}` is convention, not spec. Some clients will expose these to the LLM. Acceptable; documented limitation. For hard isolation, run a second `FastMCP` instance app-tools-only (out of scope). |
+| A4 | App-only tool surfaces to LLM | `meta={"ui": {"visibility": ["app"]}}` is convention, not spec. Some clients will expose these to the LLM. Acceptable; documented limitation. For hard isolation, run a second `MCPServer` instance app-tools-only (out of scope). |
 | A5 | App calls server tool that doesn't exist | `app.callServerTool({name})` round-trip returns `isError: true` with a "tool not found" message. Frontend handles via `ontoolresult` error branch. |
 | A6 | Dashboard JS tries to access network/storage | Iframe is sandboxed by the host. Most hosts disallow `fetch`, `localStorage`, top-level navigation. Plan UI accordingly - all state through `callServerTool`. |
 | A7 | Host doesn't implement `ui/update-model-context` | An app pushes state the model should know about (e.g. a user action in the iframe) via `app.updateModelContext`. Without it there is no in-band channel: app-only tools (`visibility: ["app"]`) return results to the iframe, not the model. Known limitation: the model only learns the outcome if the app also asks the user to tell it, or a model-visible tool exposes the state on its next call. |
@@ -49,7 +49,7 @@ Spec of edge cases for the MCP UI layer (enhancers, elicitation, MCP Apps, rich 
 
 | ID | Scenario | Expected behavior |
 |---|---|---|
-| O1 | Service raises exception | Wrapper does NOT catch. Exception propagates; FastMCP converts to `isError: true` text response. The previous `{"error": str(e)}` dict path is removed. |
+| O1 | Service raises exception | Expected failures (`ValueError`, `PermissionError`, `HTTPException`) become a `ToolError`, which the SDK returns as an `isError: true` text response the model can read. Any other exception is a crash: the SDK answers `Error executing tool <name>` and keeps the traceback in the server log. |
 | O2 | Service returns object that doesn't match `output_model` | Pydantic validation error at `.model_validate()` boundary inside the wrapper. Becomes an `isError` response. |
 | O3 | Output model field renamed in a refactor | Clients validating against `outputSchema` will break. Treat output models as a public API; use deprecation cycles. |
 | O4 | Headless tool consumed via direct registry call (CLI/API) | Returns Pydantic model instance, not dict. CLI/API consumers must call `.model_dump()` themselves if they need a dict. **Behavior change from current.** |
@@ -78,7 +78,7 @@ Spec of edge cases for the MCP UI layer (enhancers, elicitation, MCP Apps, rich 
 |---|---|---|
 | T1 | Service called from CLI (`cli.py`) | Enhancers are not invoked. Pure service runs. No `Context`, no elicitation, no app meta. |
 | T2 | Service called from API (`api_server/`) | Same as T1. Enhancers are MCP-only. |
-| T3 | Service called from MCP without an enhancer | Headless path - returns Pydantic model directly via FastMCP. |
+| T3 | Service called from MCP without an enhancer | Headless path - returns Pydantic model directly via the SDK. |
 | T4 | Service called from MCP with an enhancer | Enhanced path - async, with `Context`, returns `CallToolResult`. |
 
 ## Testing
@@ -91,9 +91,9 @@ Spec of edge cases for the MCP UI layer (enhancers, elicitation, MCP Apps, rich 
 
 ## Out of scope (intentionally)
 
-- **Resources / Prompts** - no enhancer support; existing FastMCP primitives only
+- **Resources / Prompts** - no enhancer support; existing SDK primitives only
 - **Sampling** - not used by any enhancer in this PR
 - **Tasks (SEP-1686)** - long-running ops, separate work
 - **Real MCP host integration tests** - see [#37](https://github.com/Miyamura80/telephone/issues/37)
 - **Visual regression tests** - premature on a churning UI
-- **Hard LLM/app tool isolation via separate FastMCP servers** - visibility convention is good enough for now
+- **Hard LLM/app tool isolation via separate MCPServer instances** - visibility convention is good enough for now

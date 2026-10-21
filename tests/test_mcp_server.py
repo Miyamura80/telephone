@@ -3,7 +3,7 @@
 import asyncio
 from pathlib import Path
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 from pydantic import BaseModel
 
 from mcp_server.server import _register_app_resource, mcp
@@ -96,7 +96,7 @@ class TestMCPServerIntegration(TestTemplate):
     def test_missing_app_build_serves_stub_comment(self):
         # Edge case A1 (mcp_server/MCP_UI_EDGE_CASES.md): an app dir without a
         # built dist/mcp-app.html must serve an HTML comment stub, not crash.
-        test_mcp = FastMCP("test_stub")
+        test_mcp = MCPServer("test_stub")
         missing = Path("/nonexistent/test_app/dist/mcp-app.html")
         _register_app_resource(
             test_mcp, "ui://telephone/test_stub_app", missing, "test_stub_app"
@@ -106,7 +106,9 @@ class TestMCPServerIntegration(TestTemplate):
             asyncio.run(test_mcp.read_resource("ui://telephone/test_stub_app"))
         )
         assert len(contents) == 1
-        text = str(contents[0].content)
+        first = contents[0]
+        assert not isinstance(first, tuple)
+        text = str(first.content)
         assert text.startswith("<!--")
         assert "test_stub_app not built" in text
         assert "make build_apps" in text

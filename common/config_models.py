@@ -310,6 +310,8 @@ class TelephoneEventsConfig(BaseModel):
         default_factory=lambda: [1.0, 5.0, 30.0], min_length=1
     )
     request_timeout_s: float = Field(default=10.0, gt=0)
+    verify_callbacks: bool = True
+    verification_cache_s: float = Field(default=86400.0, ge=0)
 
 
 class TelephoneConfig(BaseModel):

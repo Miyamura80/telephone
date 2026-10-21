@@ -1,23 +1,31 @@
 """Internal tool-registration factory for `mcp_server.server`.
 
-Builds FastMCP tools from `ServiceEntry` records, branching between two paths:
+Builds MCPServer tools from `ServiceEntry` records, branching between two paths:
 
-- **Headless**: sync wrapper, returns the Pydantic output model. FastMCP derives
-  `outputSchema` from the return annotation.
+- **Headless**: sync wrapper, returns the Pydantic output model. The SDK derives
+  `outputSchema` from the return annotation and runs the wrapper on a worker
+  thread, so a blocking service never stalls the event loop.
 - **Enhanced**: async wrapper with `Context`, calls an `@enhance`-registered
-  function. Returns a `CallToolResult`. We patch `outputSchema` explicitly
-  because FastMCP doesn't derive it when a tool returns `CallToolResult`.
+  function. Returns a `CallToolResult`, annotated as
+  `Annotated[CallToolResult, OutputModel]` so the SDK still publishes (and
+  validates against) the service's `outputSchema`.
+
+Expected failures (bad input, a refused seat, a missing scope, an exhausted
+quota) are re-raised as `ToolError` so the model reads their message; the SDK
+replaces any other exception's text with a generic "Error executing tool".
 
 Don't reach for these helpers from feature code - use `@service` and `@enhance`.
 """
 
 import inspect
-from typing import Any
+from typing import Annotated, Any, NoReturn
 
+from fastapi import HTTPException
 from loguru import logger as log
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.server import Context
-from mcp.server.session import ServerSession
+from mcp import MCPError
+from mcp.server import MCPServer
+from mcp.server.mcpserver import Context
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import CallToolResult, TextContent
 from pydantic import BaseModel
 
@@ -69,7 +77,7 @@ def _meter(entry: ServiceEntry) -> None:
 
     Priced services require a valid ``X-PAYMENT`` header (bound to a ContextVar
     by the /mcp middleware) that is verified and settled before the tool runs;
-    a missing/invalid payment surfaces as a structured ``McpError`` carrying the
+    a missing/invalid payment surfaces as a structured ``MCPError`` carrying the
     x402 challenge. When the paywall is inactive (x402 disabled) a priced
     service still falls back to the daily quota, so it is never unlimited. Free
     services stay on the daily quota. Skips silently when no authenticated user
@@ -103,8 +111,18 @@ async def _meter_async(entry: ServiceEntry) -> None:
     await run_sync(_meter, entry)
 
 
+# Failures the calling model should read and act on. Everything else is a bug,
+# and the SDK keeps its text on the server.
+_MODEL_VISIBLE = (ValueError, PermissionError, HTTPException)
+
+
+def _raise_for_model(exc: Exception) -> NoReturn:
+    message = exc.detail if isinstance(exc, HTTPException) else exc
+    raise ToolError(str(message)) from exc
+
+
 def _enforce_paywall(entry: ServiceEntry, user) -> bool:
-    """Enforce the x402 paywall for a priced tool; translate to ``McpError``.
+    """Enforce the x402 paywall for a priced tool; translate to ``MCPError``.
 
     Returns ``enforce_payment``'s ``charged`` flag (False when x402 is disabled,
     so the caller falls back to quota).
@@ -114,10 +132,6 @@ def _enforce_paywall(entry: ServiceEntry, user) -> bool:
         return False
 
     # Circular import: api_server.* loads only at call time (see _check_quota).
-    from fastapi import HTTPException  # noqa: PLC0415
-    from mcp.shared.exceptions import McpError  # noqa: PLC0415
-    from mcp.types import ErrorData  # noqa: PLC0415
-
     from api_server.billing.paywall import (  # noqa: PLC0415
         PaymentRequiredError,
         enforce_payment,
@@ -136,32 +150,16 @@ def _enforce_paywall(entry: ServiceEntry, user) -> bool:
     except PaymentRequiredError as exc:
         # -32402: an app-defined analogue of HTTP 402 for the MCP transport. The
         # x402 `accepts` challenge rides in `data` so the client can pay + retry.
-        raise McpError(
-            ErrorData(code=-32402, message="Payment required", data=exc.challenge)
-        ) from exc
+        raise MCPError(-32402, "Payment required", exc.challenge) from exc
     except HTTPException as exc:
-        raise McpError(
-            ErrorData(
-                code=-32402,
-                message="Payment error",
-                data=exc.detail if isinstance(exc.detail, dict) else str(exc.detail),
-            )
+        raise MCPError(
+            -32402,
+            "Payment error",
+            exc.detail if isinstance(exc.detail, dict) else str(exc.detail),
         ) from exc
 
 
-def _current_session(mcp: FastMCP) -> ServerSession | None:
-    """Return the live ServerSession, or None outside an MCP request.
-
-    Direct in-process invocations (unit tests calling a tool function) have no
-    request context; None makes capability support read as "unknown".
-    """
-    try:
-        return mcp.get_context().session
-    except (LookupError, ValueError):
-        return None
-
-
-def make_tool(mcp: FastMCP, entry: ServiceEntry) -> None:
+def make_tool(mcp: MCPServer, entry: ServiceEntry) -> None:
     """Register a service as an MCP tool - enhanced if an enhancer exists, else headless."""
     enhancer_entry = get_enhancer(entry.name)
     if enhancer_entry is not None:
@@ -170,35 +168,32 @@ def make_tool(mcp: FastMCP, entry: ServiceEntry) -> None:
         _make_headless_tool(mcp, entry)
 
 
-def _make_headless_tool(mcp: FastMCP, entry: ServiceEntry) -> None:
-    """Sync wrapper. Returns the Pydantic output model so FastMCP derives outputSchema."""
+def _make_headless_tool(mcp: MCPServer, entry: ServiceEntry) -> None:
+    """Sync wrapper. Returns the Pydantic output model so the SDK derives outputSchema."""
     func = entry.func
     input_model = entry.input_model
     output_model = entry.output_model
 
-    def tool_fn(**kwargs):
-        _check_scopes()
-        if "user_id" in input_model.model_fields:  # ty: ignore[unresolved-attribute]
-            user = current_user()
-            if user is not None:
-                kwargs["user_id"] = user.user_id
-            elif not kwargs.get("user_id"):
-                kwargs.setdefault("user_id", "")
-        input_obj = input_model(**kwargs)
-        _meter(entry)
+    def tool_fn(ctx: Context, **kwargs):
         try:
+            input_obj = _authorized_input(input_model, kwargs)
+            _meter(entry)
             return func(input_obj)
         except ConnectRequiredError as exc:
             # MCP-only affordance: upgrade to the SEP-1036 URL-elicitation
             # error (-32042) so capable hosts open the consent flow natively.
-            reraise_with_elicitation(_current_session(mcp), exc)
+            reraise_with_elicitation(ctx.session, exc)
+        except _MODEL_VISIBLE as exc:
+            _raise_for_model(exc)
 
-    _apply_tool_signature(tool_fn, entry, return_annotation=output_model)
+    _apply_tool_signature(
+        tool_fn, entry, return_annotation=output_model, include_context=True
+    )
     mcp.tool(name=entry.name, description=entry.description)(tool_fn)
 
 
 def _make_enhanced_tool(
-    mcp: FastMCP, entry: ServiceEntry, enhancer_entry: EnhancerEntry
+    mcp: MCPServer, entry: ServiceEntry, enhancer_entry: EnhancerEntry
 ) -> None:
     """Async wrapper that calls the enhancer with an `EnhancedTool`."""
     func = entry.func
@@ -206,37 +201,22 @@ def _make_enhanced_tool(
     output_model = entry.output_model
 
     async def tool_fn(ctx: Context, **kwargs) -> CallToolResult:
-        _check_scopes()
-        if "user_id" in input_model.model_fields:  # ty: ignore[unresolved-attribute]
-            user = current_user()
-            if user is not None:
-                kwargs["user_id"] = user.user_id
-            elif not kwargs.get("user_id"):
-                kwargs.setdefault("user_id", "")
-        input_obj = input_model(**kwargs)
-        await _meter_async(entry)
-        tool = EnhancedTool(ctx=ctx, input=input_obj, service_fn=func)
         try:
-            result = await enhancer_entry.fn(tool)
-        except ConnectRequiredError as exc:
-            # Expected condition, not an enhancer crash: the headless fallback
-            # would only raise it again. MCP-only affordance: upgrade to the
-            # SEP-1036 URL-elicitation error (-32042) when possible.
-            reraise_with_elicitation(ctx.session, exc)
-        except Exception as enhancer_exc:  # noqa: BLE001
-            # Enhancer failures of any kind must fall back to the pure service
-            # so MCP clients still get a structured result on the headless path.
-            if enhancer_entry.fallback == "error":
-                raise
-            result = _recover_from_enhancer_crash(tool, entry, ctx, enhancer_exc)
-            # Discard any partial output the enhancer accumulated before crashing.
-            tool.extra_content = []
-            tool.app_resource_uri = None
-
+            input_obj = _authorized_input(input_model, kwargs)
+            await _meter_async(entry)
+        except _MODEL_VISIBLE as exc:
+            _raise_for_model(exc)
+        tool = EnhancedTool(ctx=ctx, input=input_obj, service_fn=func)
+        result = await _run_enhancer(tool, entry, enhancer_entry, ctx)
         return _build_call_tool_result(result, tool)
 
     _apply_tool_signature(
-        tool_fn, entry, return_annotation=CallToolResult, include_context=True
+        tool_fn,
+        entry,
+        # The metadata tells the SDK which model to publish as outputSchema and
+        # to validate structuredContent against.
+        return_annotation=Annotated[CallToolResult, output_model],
+        include_context=True,
     )
     # Declare the app's ui:// resource on the tool definition so hosts see it
     # in tools/list (per MCP Apps spec) and not only on the call result.
@@ -246,7 +226,51 @@ def _make_enhanced_tool(
         else None
     )
     mcp.tool(name=entry.name, description=entry.description, meta=meta)(tool_fn)
-    _patch_output_schema(mcp, entry.name, output_model)
+
+
+def _authorized_input(input_model: type, kwargs: dict) -> BaseModel:
+    """Check scopes, bind ``user_id`` to the caller, and build the input model."""
+    _check_scopes()
+    if "user_id" in input_model.model_fields:  # ty: ignore[unresolved-attribute]
+        user = current_user()
+        if user is not None:
+            kwargs["user_id"] = user.user_id
+        elif not kwargs.get("user_id"):
+            kwargs.setdefault("user_id", "")
+    return input_model(**kwargs)
+
+
+async def _run_enhancer(
+    tool: EnhancedTool,
+    entry: ServiceEntry,
+    enhancer_entry: EnhancerEntry,
+    ctx: Context,
+) -> BaseModel:
+    """Run the enhancer, applying its fallback policy if it crashes."""
+    try:
+        return await enhancer_entry.fn(tool)
+    except ConnectRequiredError as exc:
+        # Expected condition, not an enhancer crash: the headless fallback
+        # would only raise it again. MCP-only affordance: upgrade to the
+        # SEP-1036 URL-elicitation error (-32042) when possible.
+        reraise_with_elicitation(ctx.session, exc)
+    except (MCPError, ToolError):
+        raise
+    except Exception as enhancer_exc:  # noqa: BLE001
+        # Enhancer failures of any kind must fall back to the pure service
+        # so MCP clients still get a structured result on the headless path.
+        if enhancer_entry.fallback == "error":
+            if isinstance(enhancer_exc, _MODEL_VISIBLE):
+                _raise_for_model(enhancer_exc)
+            raise
+        try:
+            result = _recover_from_enhancer_crash(tool, entry, ctx, enhancer_exc)
+        except _MODEL_VISIBLE as exc:
+            _raise_for_model(exc)
+        # Discard any partial output the enhancer accumulated before crashing.
+        tool.extra_content = []
+        tool.app_resource_uri = None
+        return result
 
 
 def _recover_from_enhancer_crash(
@@ -285,44 +309,11 @@ def _recover_from_enhancer_crash(
         reraise_with_elicitation(ctx.session, exc)
 
 
-def _patch_output_schema(mcp: FastMCP, tool_name: str, output_model: type) -> None:
-    """Publish outputSchema for tools that return CallToolResult.
-
-    FastMCP only derives outputSchema from a tool's return type annotation,
-    and our enhanced wrappers return CallToolResult so the structured output
-    is opaque to it. We patch the registered Tool's output_schema directly.
-
-    KNOWN FRAGILITY: this reaches into `mcp._tool_manager._tools` (double-
-    private). FastMCP has no public API for setting outputSchema on a tool
-    that returns CallToolResult. Backstopped by integration tests in
-    `tests/test_mcp_server.py::test_enhanced_tools_publish_output_schema`.
-    """
-    if not issubclass(output_model, BaseModel):
-        return
-    try:
-        tools_registry = mcp._tool_manager._tools
-    except AttributeError:
-        log.warning(
-            "FastMCP private _tool_manager._tools not found; outputSchema for "
-            "{!r} will not be published. Likely an SDK upgrade incompatibility.",
-            tool_name,
-        )
-        return
-    tool = tools_registry.get(tool_name)
-    if tool is None:
-        log.warning(
-            "Tool {!r} not found in FastMCP registry; outputSchema not published.",
-            tool_name,
-        )
-        return
-    tool.__dict__["output_schema"] = output_model.model_json_schema()
-
-
 def _resolve_signature_default(param: inspect.Parameter, field_info: Any) -> Any:
     """Return a signature-safe default for a synthesized tool parameter.
 
     ``inspect.signature(model)`` renders a Pydantic ``default_factory`` field
-    with the private ``<factory>`` sentinel instead of a real value. FastMCP's
+    with the private ``<factory>`` sentinel instead of a real value. The SDK's
     ``func_metadata`` copies each parameter's ``default`` verbatim into the
     tool's argument model (see its ``func_arg_to_pydantic_field``), so that
     sentinel would be handed back as the argument value whenever the caller
@@ -344,10 +335,10 @@ def _resolve_signature_default(param: inspect.Parameter, field_info: Any) -> Any
 def _apply_tool_signature(
     tool_fn: Any,
     entry: ServiceEntry,
-    return_annotation: type,
+    return_annotation: Any,
     include_context: bool = False,
 ) -> None:
-    """Synthesize __signature__ and __annotations__ so FastMCP derives input/output schema."""
+    """Synthesize __signature__ and __annotations__ so the SDK derives input/output schema."""
     tool_fn.__name__ = entry.name
     tool_fn.__doc__ = entry.description
 
@@ -397,8 +388,11 @@ def _build_call_tool_result(result: BaseModel, tool: EnhancedTool) -> CallToolRe
         TextContent(type="text", text=result.model_dump_json()),
         *tool.extra_content,
     ]
-    kwargs: dict = {"content": content, "structuredContent": result.model_dump()}
+    kwargs: dict = {
+        "content": content,
+        "structured_content": result.model_dump(mode="json"),
+    }
     app_meta = tool.app_meta()
     if app_meta is not None:
-        kwargs["_meta"] = app_meta
+        kwargs["meta"] = app_meta
     return CallToolResult(**kwargs)

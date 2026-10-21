@@ -12,7 +12,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
 from mcp.server.elicitation import ElicitationResult
-from mcp.server.fastmcp.server import Context
+from mcp.server.mcpserver import Context
 from mcp.types import (
     Annotations,
     AudioContent,
@@ -30,6 +30,10 @@ from src.utils.cancellation import bind_cancel_event, unbind_cancel_event
 # other agent) run on their own pool so they never starve the default thread
 # pool that metering and FastAPI's sync routes share.
 _BLOCKING_POOL = ThreadPoolExecutor(max_workers=256, thread_name_prefix="mcp-wait")
+
+# From this protocol revision on there is no server-to-client request channel:
+# `ctx.elicit()` raises NoBackChannelError however the client declared itself.
+_NO_BACK_CHANNEL_SINCE = "2026-07-28"
 
 
 def build_app_meta(resource_uri: str) -> dict:
@@ -112,17 +116,21 @@ class EnhancedTool[TInput: BaseModel, TOutput: BaseModel]:
 
     @property
     def can_elicit(self) -> bool:
-        """True only when the client DECLARED the elicitation capability.
+        """True only for a legacy connection whose client DECLARED elicitation.
 
-        Deliberately conservative: under ``stateless_http=True`` (the
-        production default) the per-request session never sees the client's
-        ``initialize`` params, so this returns False even for
-        elicitation-capable hosts - which is correct, because in-band
-        elicitation cannot complete stateless (the client's response POST is
-        uncorrelatable; ``ctx.elicit()`` would hang). Do NOT change this to
-        attempt-when-unknown. See the transport comment in
-        ``mcp_server/server.py``.
+        Deliberately conservative. A 2026-07-28 connection has no back channel,
+        so push elicitation is impossible there whatever the client declared
+        (use the SDK's ``Resolve(...)`` parameters for that era). On a legacy
+        connection under ``stateless_http=True`` (the production default) the
+        per-request session never sees the client's ``initialize`` params, so
+        this returns False even for elicitation-capable hosts - which is
+        correct, because the client's answer would land on another request.
+        Do NOT change this to attempt-when-unknown. See the transport comment
+        in ``mcp_server/server.py``.
         """
+        version = self._ctx.protocol_version
+        if isinstance(version, str) and version >= _NO_BACK_CHANNEL_SINCE:
+            return False
         return self._ctx.session.check_client_capability(
             ClientCapabilities(elicitation=ElicitationCapability())
         )
@@ -160,7 +168,7 @@ class EnhancedTool[TInput: BaseModel, TOutput: BaseModel]:
         annotations = _annotations(audience)
         self.extra_content.append(
             ImageContent(
-                type="image", data=data, mimeType=mime_type, annotations=annotations
+                type="image", data=data, mime_type=mime_type, annotations=annotations
             )
         )
 
@@ -174,7 +182,7 @@ class EnhancedTool[TInput: BaseModel, TOutput: BaseModel]:
         annotations = _annotations(audience)
         self.extra_content.append(
             AudioContent(
-                type="audio", data=data, mimeType=mime_type, annotations=annotations
+                type="audio", data=data, mime_type=mime_type, annotations=annotations
             )
         )
 

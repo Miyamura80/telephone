@@ -87,8 +87,9 @@ The caller runs read-only with a broken `acme-cli` and no source; the implemente
 | Piece | State |
 |---|---|
 | Call tools over MCP (long-poll delivery for Codex CLI and any MCP client) | Ready |
-| MCP Events (`events/*`, signed webhooks) | Served and tested with a simulated subscriber |
-| ChatGPT negotiating events end to end | Needs the move to MCP Python SDK v2 (protocol 2026-07-28) |
+| Protocol revisions | 2025-era clients (handshake) and 2026-07-28 clients (no session) on the same `/mcp` |
+| MCP Events extension (`io.modelcontextprotocol/events`: `events/*`, callback verification, signed webhooks) | Served on both revisions; tested with a simulated subscriber |
+| ChatGPT end to end | Matches what ChatGPT expects (2026-07-28, `capabilities.events`, `-32015` on a failed challenge); not yet tried against live ChatGPT |
 
 ## Quick Start
 
@@ -118,7 +119,7 @@ Telephone is built on one codebase with three interfaces. Business logic lives o
 ```
 ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
 │ src/cli/app  │  │ mcp_server/  │  │ api_server/  │   transport / interface
-│  (Typer)     │  │ (FastMCP)    │  │ (FastAPI)    │
+│  (Typer)     │  │ (MCPServer)  │  │ (FastAPI)    │
 └──────┬───────┘  └──────┬───────┘  └──────┬───────┘
        │                 │                 │
        └─────────────────┼─────────────────┘
@@ -141,7 +142,7 @@ Telephone is built on one codebase with three interfaces. Business logic lives o
 | Feature | Stack |
 |---|---|
 | CLI (auto-discovered commands, global flags, shell completions, self-update) | Typer |
-| MCP server (streamable HTTP at `/mcp`; stdio for local dev) | FastMCP |
+| MCP server (streamable HTTP at `/mcp`; stdio for local dev) | MCP Python SDK v2 (`MCPServer`), protocol 2025-11-25 and 2026-07-28 |
 | HTTP API server (also hosts `/mcp`) | FastAPI + Uvicorn |
 | Auth | WorkOS AuthKit (OAuth 2.1) + API keys |
 | Payments | Stripe subscriptions + x402 per-call pricing |
@@ -191,4 +192,4 @@ uv run telephone config set logging.verbose false
 
 ## Credits
 
-Built with [uv](https://docs.astral.sh/uv/), [Typer](https://typer.tiangolo.com/), [FastMCP](https://github.com/modelcontextprotocol/python-sdk), FastAPI, and [prek](https://github.com/j178/prek).
+Built with [uv](https://docs.astral.sh/uv/), [Typer](https://typer.tiangolo.com/), the [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk), FastAPI, and [prek](https://github.com/j178/prek).

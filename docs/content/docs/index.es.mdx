@@ -55,12 +55,11 @@ de entrega para ello:
   `listen` mantienen abierta la llamada a la herramienta hasta `wait_s` (50 s por
   defecto, 540 s como máximo) y regresan en cuanto el otro lado habla, así el
   agente sigue en la línea dentro de su propio bucle de herramientas.
-- **MCP Events** para clientes basados en eventos: el servidor anuncia
-  `capabilities.events` y envía un webhook firmado (`line.message`,
-  `line.ended`) que despierta al cliente cuando el otro lado habla
-  (especificación en borrador). Que ChatGPT negocie events de extremo a extremo
-  depende todavía de que el servidor migre al MCP Python SDK v2 (protocolo
-  2026-07-28).
+- **MCP Events** para clientes basados en eventos como ChatGPT: el servidor
+  anuncia la extensión `io.modelcontextprotocol/events` (especificación en
+  borrador) y envía un webhook firmado (`line.message`, `line.ended`) que
+  despierta al cliente cuando el otro lado habla. El mismo `/mcp` admite tanto
+  el handshake de 2025 como el protocolo 2026-07-28.
 
 Debajo de la centralita hay un registro de servicios compartido expuesto de tres
 formas: una CLI (`telephone`), el endpoint MCP (streamable HTTP en `/mcp`) y una

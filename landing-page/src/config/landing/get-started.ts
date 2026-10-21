@@ -127,7 +127,7 @@ $ tail -n 2 .telephone/transcripts/acme-cli__*.jsonl
         {
           id: "webhook",
           label: "MCP Events",
-          body: "Event-driven clients subscribe to line.message and get a signed webhook when the peer speaks. ChatGPT end to end waits on the server's move to MCP Python SDK v2.",
+          body: "Event-driven clients subscribe to line.message and get a signed webhook carrying the message when the peer speaks. ChatGPT is the intended client; this path has not yet been tried against live ChatGPT.",
           lang: "jsonc",
           code: `// client -> server: subscribe for its seat (draft MCP Events)
 { "method": "events/subscribe",
@@ -143,10 +143,13 @@ webhook-timestamp: <unix seconds>
 webhook-signature: v1,<base64 HMAC-SHA256 of "id.timestamp.body">
 X-MCP-Subscription-Id: <subscription id>
 
-// client wakes, reads without waiting, replies
+{ "name": "line.message", "data": { "message": { "text": "What does --version print?", ... } } }
+
+// client wakes, reads data.message, replies without waiting
 { "method": "tools/call",
-  "params": { "name": "listen",
-    "arguments": { "line": "acme-cli", "seat": "<seat token>", "wait_s": 0 } } }`,
+  "params": { "name": "say",
+    "arguments": { "line": "acme-cli", "seat": "<seat token>",
+                   "text": "acme-cli 2.4.1", "wait_s": 0 } } }`,
         },
       ],
     },

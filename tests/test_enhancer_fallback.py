@@ -7,7 +7,8 @@ re-execute a mutating service (duplicate message / double charge).
 import asyncio
 
 import pytest
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import BaseModel
 
 from mcp_server._tool_factory import make_tool
@@ -72,7 +73,7 @@ class TestEnhancerCrashFallback(TestTemplate):
         enhance(svc_name, fallback=fallback_mode)(enhancer_fn)
 
         entry = next(e for e in get_registry() if e.name == svc_name)
-        test_mcp = FastMCP("test_crash")
+        test_mcp = MCPServer("test_crash")
         make_tool(test_mcp, entry)
         tool_fn = test_mcp._tool_manager._tools[svc_name].fn
 
@@ -93,7 +94,7 @@ class TestEnhancerCrashFallback(TestTemplate):
             ctx = _make_mock_ctx()
             result = asyncio.run(tool_fn(ctx=ctx, x=7))
             # Result is a CallToolResult with the pure service's output
-            assert result.structuredContent == {"value": 700}
+            assert result.structured_content == {"value": 700}
         finally:
             cleanup()
 
@@ -126,7 +127,7 @@ class TestEnhancerCrashFallback(TestTemplate):
         try:
             ctx = _make_mock_ctx()
             result = asyncio.run(tool_fn(ctx=ctx, x=3))
-            assert result.structuredContent == {"value": 300}
+            assert result.structured_content == {"value": 300}
             # Only the auto-generated text block; no DO NOT SHIP THIS.
             assert all(
                 "DO NOT SHIP" not in c.text for c in result.content if c.type == "text"
@@ -144,7 +145,7 @@ class TestEnhancerCrashFallback(TestTemplate):
         try:
             ctx = _make_mock_ctx()
             result = asyncio.run(tool_fn(ctx=ctx, x=4))
-            assert result.structuredContent == {"value": 400}
+            assert result.structured_content == {"value": 400}
             assert calls["count"] == 1
             # Partial enhancer output from before the crash is still discarded.
             assert all(
@@ -160,7 +161,7 @@ class TestEnhancerCrashFallback(TestTemplate):
         )
         try:
             result = asyncio.run(tool_fn(ctx=_make_mock_ctx(), x=6))
-            assert result.structuredContent == {"value": 600}
+            assert result.structured_content == {"value": 600}
             assert calls["count"] == 1
         finally:
             cleanup()
@@ -187,7 +188,7 @@ class TestEnhancerCrashFallback(TestTemplate):
         try:
             ctx = _make_mock_ctx()
             result = asyncio.run(tool_fn(ctx=ctx, x=5))
-            assert result.structuredContent == {"value": 500}
+            assert result.structured_content == {"value": 500}
             assert calls["count"] == 1
         finally:
             cleanup()
@@ -212,7 +213,7 @@ class TestEnhancerCrashFallback(TestTemplate):
             "headless", _call_twice, mutating=True, fail_on_call=2
         )
         try:
-            with pytest.raises(ValueError, match="service failed on call 2"):
+            with pytest.raises(ToolError, match="service failed on call 2"):
                 asyncio.run(tool_fn(ctx=_make_mock_ctx(), x=2))
             assert calls["count"] == 2
         finally:

@@ -30,7 +30,7 @@ their seat token on every later call.
 `dial`, `answer`, `say` and `listen` wait up to `wait_s` for the other agent, so a client that
 cannot be woken by the server (Codex CLI) hears the reply as the tool result. Clients that
 already support the draft MCP Events extension pass `wait_s: 0` and subscribe to
-`line.message` instead (ChatGPT needs the SDK v2 migration first).
+`line.message` instead (the `io.modelcontextprotocol/events` extension).
 </Callout>
 
 {/* END generated */}
@@ -66,8 +66,8 @@ A conversation only works if each side learns when the other has spoken.
 - **MCP Events webhooks (ChatGPT).** The client subscribes to `line.message`
   (and `line.ended`) for its seat with `events/subscribe`. When the peer speaks,
   the server POSTs a webhook signed per Standard Webhooks
-  (`webhook-signature: v1,<HMAC-SHA256>`). The client wakes, reads with
-  `listen` (`wait_s: 0`) and replies with `say` (`wait_s: 0`).
+  (`webhook-signature: v1,<HMAC-SHA256>`) carrying the message. The client
+  wakes, reads it from the payload and replies with `say` (`wait_s: 0`).
 
 ```text
 caller (Codex CLI)            Telephone server             implementer (ChatGPT)
@@ -76,16 +76,32 @@ caller (Codex CLI)            Telephone server             implementer (ChatGPT)
   |                              |<-- say("which version?", 0) ---|
   |<-- outcome: message ---------|                                 |
   | say("2.4.1") --------------->|-- webhook: line.message ------->|
-  |   (held open)                |<-- listen(0), say("fixed", 0) -|
+  |   (held open)                |<-- say("fixed", 0) ------------|
   |<-- outcome: message ---------|                                 |
   | hang_up(resolved=true) ----->|-- webhook: line.ended --------->|
 ```
 
+A webhook carries the new message in `data.message`, so the client replies with
+`say` directly; calling `listen` would return the same message again.
+
+Before the first delivery to a callback URL, the server POSTs a signed
+`{"type": "verification", "challenge": "..."}` and the endpoint must answer 2xx
+with the challenge echoed back as `{"challenge": "..."}`. A callback that fails
+gets JSON-RPC error `-32015` with `data.reason`: `challenge_failed`, `timeout`,
+`connection_failed`, or `blocked_address` when the host started resolving to a
+private address after the URL was accepted. A URL refused up front (not https,
+or not a public address) is a plain invalid-params error (`-32602`). A verified callback is trusted for 24
+hours per caller, so refreshing a subscription does not challenge it again.
+Unsubscribe by subscription `id`, or by the same `name`, `arguments` and
+`delivery.url` used to subscribe.
+
 <Callout type="warn" title="MCP Events is a draft">
-The events methods follow the draft MCP Triggers and Events extension. ChatGPT
-negotiates events on protocol 2026-07-28, which the server will speak after its
-move to MCP Python SDK v2; until then `events/*` is served by a thin adapter on
-`/mcp` and covered by tests with a simulated subscriber.
+The events methods follow the draft MCP Events extension (SEP-3415,
+`io.modelcontextprotocol/events`). The server advertises
+`capabilities.events`, the key ChatGPT reads, on both protocol revisions, and
+the extension under `capabilities.extensions` on 2026-07-28 (the 2025 revision
+has no `extensions` field). It is covered by tests with a simulated
+subscriber but has not yet been tried against live ChatGPT.
 </Callout>
 
 ## Connecting Codex CLI

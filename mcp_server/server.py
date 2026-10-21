@@ -1,4 +1,4 @@
-"""FastMCP server that registers services as MCP tools and exposes app HTML resources.
+"""MCP server (SDK v2 ``MCPServer``) that registers services as MCP tools and exposes app HTML resources.
 
 Two registration paths (see `_tool_factory.py` for details):
 
@@ -19,13 +19,13 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from loguru import logger as log
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 
 from common import global_config
 from mcp_server._tool_factory import make_tool
-from mcp_server.events import EventsJsonRpc, advertise_events
+from mcp_server.events import LineEventsExtension, advertise_top_level_events
 from services import ServiceEntry, discover_services, get_registry
 
 _APPS_DIR = Path(__file__).parent / "apps"
@@ -43,15 +43,16 @@ _MCP_INSTRUCTIONS = (
     "changed. Pass your seat token on every call after dial/answer. When a tool "
     "returns outcome='waiting', call `listen` again instead of ending your turn; "
     "stop only when outcome='ended'. Event-driven clients subscribe to "
-    "`line.message` via events/subscribe and pass wait_s=0."
+    "`line.message` via events/subscribe (extension "
+    "io.modelcontextprotocol/events) and pass wait_s=0."
 )
 
 
 def _transport_security() -> TransportSecuritySettings:
     """DNS-rebinding allowlist for the streamable-HTTP transport.
 
-    FastMCP enables DNS-rebinding protection and, when constructed with the
-    default loopback host, only whitelists localhost - so any real deployment
+    The SDK enables DNS-rebinding protection and, by default, only
+    whitelists localhost - so any real deployment
     behind a custom domain gets ``421 Misdirected Request`` on ``/mcp``. We keep
     the protection on but additionally allow the public host derived from
     ``MCP_PUBLIC_URL`` (so it auto-tracks whatever domain the server is deployed
@@ -93,43 +94,23 @@ def _transport_security() -> TransportSecuritySettings:
     )
 
 
-# ``stateless_http=True`` (the config default) makes every /mcp request
-# self-contained: the server does not persist per-session state keyed by
-# ``Mcp-Session-Id`` in memory. Stateful mode (the FastMCP default) breaks in
-# exactly the deployments this template targets - Render free-tier spins down
-# when idle, redeploys restart the process, and horizontal scaling routes
-# requests across replicas - each of which wipes/splits the in-memory session
-# store, so a client's next POST fails with "MCP session has been terminated or
-# no longer exists on the server" (mcp_session_terminated). Some clients
-# (OpenAI, and connectors that DELETE the session after each call) trigger the
-# same error even single-replica. Stateless mode sidesteps all of it.
+# ``stateless_http=True`` (the config default) only changes how 2025-era
+# clients are served: no per-session state is kept for ``Mcp-Session-Id``, so a
+# restart, a redeploy or a request routed to another replica does not end their
+# session ("MCP session has been terminated", mcp_session_terminated). Clients on
+# the 2026-07-28 revision have no session at all and never read this flag.
 #
-# The trade-off: EVERY server-initiated request hangs stateless - sampling
-# (python-sdk issue 678) AND in-band elicitation. The elicitation/create
-# request does reach the client on the tool call's SSE stream, but the
-# client's response arrives as a new POST that lands on a fresh transient
-# session and is dropped, so ``ctx.elicit()`` never resolves (verified
-# empirically against this SDK). Rendering Apps and attaching content are
-# unaffected. That is why every elicitation call site gates on the client
-# having DECLARED the capability: under stateless HTTP ``client_params`` is
-# never populated, the check correctly returns False, and the enhancers take
-# their non-elicitation fallbacks. Deployments that want host-native
-# elicitation must run a single
-# replica and set ``server.mcp_stateless_http: false``.
-#
-# Stateless is also where the spec is going: the MCP core is dropping session
-# state at the protocol layer (SEP-2567 removes Mcp-Session-Id, SEP-2575
-# removes the initialize handshake; 2026-07-28 RC), so "any request can land on
-# any instance." stateless_http=True is the SDK option the transport roadmap
-# points implementers to today. It still runs the initialize handshake (the SDK
-# keeps that until it implements those SEPs) but stops persisting/validating
-# per-session state, which is what actually fixes the error - and it's
-# forward-compatible with the RC.
-mcp: FastMCP = FastMCP(
+# The trade-off for those legacy clients: server-initiated requests (sampling,
+# push elicitation) cannot complete without a session, so every elicitation call
+# site gates on the client having DECLARED the capability, which a stateless
+# request never shows, and falls back. Deployments that want host-native push
+# elicitation for legacy clients must run one replica with
+# ``server.mcp_stateless_http: false``.
+mcp: MCPServer = MCPServer(
     "telephone",
     instructions=_MCP_INSTRUCTIONS,
-    transport_security=_transport_security(),
-    stateless_http=global_config.server.mcp_stateless_http,
+    extensions=[LineEventsExtension()],
+    middleware=[advertise_top_level_events],
 )
 
 _populated: bool = False
@@ -145,8 +126,8 @@ _EXCLUDED_DEFAULT_MCP_SERVICES = frozenset(
 )
 
 
-def build_mcp_server() -> FastMCP:
-    """Populate the FastMCP singleton and return it. Idempotent."""
+def build_mcp_server() -> MCPServer:
+    """Populate the MCPServer singleton and return it. Idempotent."""
     global _populated
     if _populated:
         return mcp
@@ -167,7 +148,6 @@ def build_mcp_server() -> FastMCP:
             continue
         make_tool(mcp, entry)
     _register_app_resources(mcp)
-    advertise_events(mcp)
 
     _populated = True
     return mcp
@@ -191,7 +171,7 @@ def llm_tool_surface() -> list[ServiceEntry]:
     return sorted(surface, key=lambda e: e.name)
 
 
-def _register_app_resources(mcp: FastMCP) -> None:
+def _register_app_resources(mcp: MCPServer) -> None:
     """Register ui:// resources for each MCP App with a built dist/mcp-app.html."""
     if not _APPS_DIR.is_dir():
         return
@@ -204,7 +184,7 @@ def _register_app_resources(mcp: FastMCP) -> None:
 
 
 def _register_app_resource(
-    mcp: FastMCP, uri: str, html_path: Path, app_name: str
+    mcp: MCPServer, uri: str, html_path: Path, app_name: str
 ) -> None:
     @mcp.resource(uri, mime_type=_APP_MIME_TYPE, name=f"{app_name} app")
     def _read_app() -> str:
@@ -217,7 +197,7 @@ def _register_app_resource(
 def mount_on(app, path: str = "/mcp") -> Starlette:
     """Mount the streamable-HTTP MCP server onto a Starlette/FastAPI app.
 
-    FastMCP's ``streamable_http_app()`` already serves at ``/mcp`` internally,
+    ``streamable_http_app()`` already serves at ``/mcp`` internally,
     so we mount it at root to avoid a doubled prefix. Caller must also include
     :func:`lifespan` in the parent app's lifespan to start the session manager.
 
@@ -228,19 +208,20 @@ def mount_on(app, path: str = "/mcp") -> Starlette:
     """
     if path != "/mcp":
         raise ValueError(
-            "Custom mount paths are not supported; FastMCP serves at /mcp internally."
+            "Custom mount paths are not supported; the MCP app serves at /mcp internally."
         )
     mcp = build_mcp_server()
-    mcp_app = mcp.streamable_http_app()
-    # EventsJsonRpc answers the MCP Events methods the 1.x SDK cannot route
-    # and passes every other request through to FastMCP unchanged.
-    app.mount("/", EventsJsonRpc(mcp_app))
+    mcp_app = mcp.streamable_http_app(
+        stateless_http=global_config.server.mcp_stateless_http,
+        transport_security=_transport_security(),
+    )
+    app.mount("/", mcp_app)
     return mcp_app
 
 
 @asynccontextmanager
 async def lifespan(_app):
-    """Async context manager that runs FastMCP's streamable-HTTP session manager.
+    """Async context manager that runs the streamable-HTTP session manager.
 
     The parent FastAPI app must include this in its ``lifespan=`` argument or
     incoming /mcp requests will fail with "Task group is not initialized".

@@ -92,7 +92,7 @@ def session_cookie_policy() -> SessionCookiePolicy:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Run the FastMCP session manager for the app's lifetime."""
+    """Run the MCP session manager for the app's lifetime."""
     async with mcp_lifespan(app):
         yield
 
@@ -131,7 +131,7 @@ app.add_middleware(
 
 # Outermost, deliberately: it is the only middleware that must stamp *every*
 # byte-producing path, including CORS preflights, the MCPAuthMiddleware 401
-# challenge (which writes to `send` directly), and the FastMCP mount below.
+# challenge (which writes to `send` directly), and the MCP mount below.
 #
 # On the mount: `mount_mcp_server(app)` calls `app.mount("/", mcp_app)`, which
 # registers an ordinary route on `app.router`. `add_middleware` wraps the
@@ -173,7 +173,7 @@ app.include_router(agentic_payments.router)
 app.include_router(ask.router)
 
 # --- MCP server (streamable HTTP) -----------------------------------------
-# Mounts FastMCP at /mcp so CLI/API/MCP share one process, port, and middleware.
+# Mounts the MCP server at /mcp so CLI/API/MCP share one process, port, and middleware.
 _mcp_app = mount_mcp_server(app)
 
 # The mount sits at "/", so it - not FastAPI - answers every path the routers

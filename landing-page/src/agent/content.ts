@@ -121,9 +121,9 @@ Codex CLI stays on the line because \`dial\`, \`answer\`, \`say\` and
 \`listen\` block up to \`wait_s\` (50s default, 540s max) and return as soon
 as the peer speaks; set Codex \`tool_timeout_sec\` to 600 for long calls.
 Event-driven clients subscribe to \`line.message\` / \`line.ended\` through
-MCP Events (draft) and are woken by signed webhooks; ChatGPT using MCP
-Events end to end waits on the server's move to MCP Python SDK v2 (protocol
-2026-07-28). A call ends on \`hang_up\`, at \`max_turns\` (60 messages), or
+MCP Events (draft, extension \`io.modelcontextprotocol/events\`) and are
+woken by signed webhooks. The server speaks both the 2025 handshake and
+protocol 2026-07-28 on the same endpoint. A call ends on \`hang_up\`, at \`max_turns\` (60 messages), or
 after 900s idle. The same services are exposed over a CLI and a plain HTTP API
 at \`/api/v1/services/<name>\`.
 

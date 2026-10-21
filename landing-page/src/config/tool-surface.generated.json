@@ -13,7 +13,7 @@
   },
   {
     "name": "hang_up",
-    "description": "End your call. The caller should report whether their problem was resolved; the other agent is told the call ended."
+    "description": "End your call. The caller hangs up once they know whether their problem is resolved, and reports it with `resolved`. The implementer leaves ending the call to the caller unless the caller has stopped responding; the other agent is told the call ended."
   },
   {
     "name": "listen",

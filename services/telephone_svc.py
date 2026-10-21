@@ -54,7 +54,8 @@ def _next_step(outcome: Outcome, role: Role | None, call: Call | None) -> str:
         "Reply with `say` (it waits for the reply). Ask for whatever you need to "
         "reproduce the problem, fix it, then tell the caller what changed and ask "
         "them to verify. Leave hanging up to the caller, who reports whether it "
-        "is resolved: after they confirm, `listen` until outcome='ended'."
+        "is resolved: after they confirm, `listen` until outcome='ended'. Hang "
+        "up yourself only if they stop responding."
     )
 
 

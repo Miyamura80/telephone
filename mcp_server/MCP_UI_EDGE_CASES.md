@@ -15,7 +15,7 @@ Spec of edge cases for the MCP UI layer (enhancers, elicitation, MCP Apps, rich 
 
 | ID | Scenario | Expected behavior |
 |---|---|---|
-| E1 | Enhancer raises an exception | If `@enhance(fallback="headless")`, log via `loguru.exception` and return the pure service result as a structured response. If `fallback="error"`, propagate (expected failures as `ToolError`, so the SDK returns `isError: true` with their text). |
+| E1 | Enhancer raises an exception | If `@enhance(fallback="headless")`, log via `loguru.exception` and return the pure service result as a structured response, except for a mutating service whose `tool.call()` never completed: that propagates the enhancer error rather than re-running the service. If `fallback="error"`, propagate (expected failures as `ToolError`, so the SDK returns `isError: true` with their text). |
 | E2 | Enhancer hangs or runs >30s | No timeout enforced by the enhancer layer. Tool transport timeouts apply. Enhancers should be fast or use the `tasks` capability (out of scope for this PR). |
 | E3 | Enhancer mutates `tool.input` in place | Forbidden. Use `tool.call(override_input=...)` with `model_copy(update=...)`. Mutation breaks the pure-service invariant. |
 | E4 | Enhancer registered for unknown service name | `get_enhancer()` returns the registration; service registration would skip silently. Tool registration logs a warning at startup if no matching service exists. |

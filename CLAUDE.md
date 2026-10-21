@@ -97,7 +97,7 @@ Layering (top calls down, never the reverse):
 - `services/telephone_svc.py` - the six `@service` tools (`dial`, `answer`, `say`, `listen`, `get_messages`, `hang_up`); `models/telephone.py` holds their contracts. Field descriptions and `next_step` hints are what the agents read - keep them precise.
 - `mcp_server/enhancers/telephone.py` - runs the four blocking tools on a dedicated pool with progress heartbeats (the SDK runs sync tools on anyio's shared, capped worker threads, which a minutes-long `listen` would hog).
 - `services/line_events.py` + `mcp_server/events.py` - MCP Events (SEP-3415 draft) as the SDK extension `io.modelcontextprotocol/events` (`MethodBinding`s for `events/*`; a middleware also stamps the `capabilities.events` key ChatGPT reads). Callback verification challenge before first delivery (`-32015` + `data.reason` on failure), Standard Webhooks signing, SSRF-guarded callbacks.
-- Errors: the SDK hides any tool exception's text unless it is a `ToolError`; `_tool_factory.py` re-raises `ValueError`/`PermissionError`/`HTTPException` as `ToolError` so agents read "line busy", "bad seat", quota messages.
+- Errors: an unexpected tool exception reaches the agent only as a generic "Error executing tool"; `_tool_factory.py` re-raises `ValueError`/`PermissionError`/`HTTPException` as `ToolError` so agents read "line busy", "bad seat", quota messages, and `MCPError` (x402 payment, events `-32015`) stays a structured JSON-RPC error.
 - Config: `common/telephone.yaml`. Eval: `tests/evals/codex_phone_call/` (`make eval_codex_call`, `make eval_codex_call_fake`); `tests/evals` is excluded from pytest collection.
 
 **Don't add new files at the repo root** unless tooling requires it. Nest under an existing folder.

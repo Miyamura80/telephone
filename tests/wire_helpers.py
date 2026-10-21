@@ -31,12 +31,6 @@ from db import engine as db_engine
 from db.base import Base
 
 
-def _free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
-
-
 @pytest.fixture(scope="module")
 def server(tmp_path_factory):
     # A file DB, not :memory: + StaticPool: the server's auth and quota checks
@@ -64,11 +58,17 @@ def server(tmp_path_factory):
         )
         with session_factory() as session:
             key, _ = create_api_key(session, user_id="wire-test", scopes=["*"])
-        port = _free_port()
+        # Bind here and hand uvicorn the open socket, so no other process can
+        # take the port between choosing it and the server listening on it.
+        sock = stack.enter_context(socket.socket())
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
         srv = uvicorn.Server(
             uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
         )
-        thread = threading.Thread(target=srv.run, daemon=True)
+        thread = threading.Thread(
+            target=srv.run, kwargs={"sockets": [sock]}, daemon=True
+        )
         thread.start()
         deadline = time.monotonic() + 15
         while not srv.started:

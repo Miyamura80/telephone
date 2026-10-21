@@ -49,7 +49,7 @@
 
 ## Other
 - `outputSchema` auto-generated from `output_model` for all tools (headless and enhanced)
-- Wrapper returns Pydantic model directly (not dict). Expected failures (`ValueError`, `PermissionError`, `HTTPException`) are re-raised as `ToolError` so the model reads them as `isError: true` text; the SDK replaces any other exception's text with a generic message
+- Headless wrappers return the Pydantic model directly (not a dict); enhanced wrappers return `CallToolResult` with the model in `structuredContent`. Expected failures (`ValueError`, `PermissionError`, `HTTPException`) are re-raised as `ToolError` so the model reads them as `isError: true` text; the SDK replaces any other exception's text with a generic message
 - Resources & Prompts: out of scope
 - SDK pin: `mcp[cli]>=2.3.0,<3.0.0` (`MCPServer`, protocol 2025-11-25 and 2026-07-28)
 - Testing initial PR: pytest + vitest only

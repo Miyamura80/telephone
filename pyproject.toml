@@ -175,6 +175,7 @@ exclude = [
     "tests/test_events_wire.py",
     "tests/wire_helpers.py",
     "tests/test_line_events.py",
+    "tests/test_line_events_verification.py",
     "utils/llm/",
     "common/",
     "src/utils/logging_config.py",

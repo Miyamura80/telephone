@@ -87,6 +87,9 @@ Verifier = Callable[[str, bytes, dict[str, str]], tuple[int, bytes]]
 Scheduler = Callable[[float, Callable[[], object]], None]
 
 
+_MAX_REPLY_BYTES = 64 * 1024
+
+
 def _http_send(url: str, body: bytes, headers: dict[str, str]) -> int:
     return _http_post(url, body, headers)[0]
 
@@ -109,11 +112,20 @@ def _http_post(url: str, body: bytes, headers: dict[str, str]) -> tuple[int, byt
         headers = {**headers, "host": parts.netloc}
         extensions = {"sni_hostname": host}
     timeout = global_config.telephone.events.request_timeout_s
-    with httpx.Client(timeout=timeout, follow_redirects=False) as client:
-        response = client.post(
-            target, content=body, headers=headers, extensions=extensions
-        )
-        return response.status_code, getattr(response, "content", b"")[:65536]
+    with (
+        httpx.Client(timeout=timeout, follow_redirects=False) as client,
+        client.stream(
+            "POST", target, content=body, headers=headers, extensions=extensions
+        ) as response,
+    ):
+        # Stream so a hostile endpoint cannot make us buffer a huge reply; the
+        # only body we read is an echoed challenge.
+        reply = b""
+        for chunk in response.iter_bytes():
+            reply += chunk
+            if len(reply) >= _MAX_REPLY_BYTES:
+                break
+        return response.status_code, reply[:_MAX_REPLY_BYTES]
 
 
 def _schedule(delay_s: float, fn: Callable[[], object]) -> None:
@@ -265,9 +277,10 @@ class LineEvents:
             self._prune_expired_locked(now)
             verified_at = self._verified.get((owner, params.delivery.url))
         if cfg.verify_callbacks and (
-            verified_at is None or now - verified_at > cfg.verification_cache_s
+            verified_at is None or now - verified_at >= cfg.verification_cache_s
         ):
             self._verify(sub_id, params.delivery.url, secret)
+            now = self._clock()  # the TTL starts once the callback is proven
             with self._lock:
                 self._verified[(owner, params.delivery.url)] = now
         sub = Subscription(
@@ -391,6 +404,9 @@ class LineEvents:
     def _prune_expired_locked(self, now: float) -> None:
         for sub_id in [s for s, sub in self._subs.items() if sub.expires_at < now]:
             del self._subs[sub_id]
+        cutoff = now - global_config.telephone.events.verification_cache_s
+        for key in [k for k, at in self._verified.items() if at <= cutoff]:
+            del self._verified[key]
 
     def _payload(self, name: str, event: CallEvent) -> dict:
         data: dict = {"line": event.line, "call_id": event.call_id}

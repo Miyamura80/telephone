@@ -69,8 +69,13 @@ class UnsubscribeParams(BaseModel):
 
     @model_validator(mode="after")
     def _id_or_key(self) -> "UnsubscribeParams":
-        if self.id is None and None in (self.name, self.arguments, self.delivery):
-            raise ValueError("pass id, or name, arguments and delivery.url")
+        key = (self.name, self.arguments, self.delivery)
+        by_key = all(part is not None for part in key)
+        some_key = any(part is not None for part in key)
+        if (self.id is None and not by_key) or (self.id is not None and some_key):
+            raise ValueError(
+                "pass either id, or all of name, arguments and delivery.url"
+            )
         return self
 
 

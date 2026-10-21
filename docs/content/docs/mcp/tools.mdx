@@ -66,8 +66,8 @@ A conversation only works if each side learns when the other has spoken.
 - **MCP Events webhooks (ChatGPT).** The client subscribes to `line.message`
   (and `line.ended`) for its seat with `events/subscribe`. When the peer speaks,
   the server POSTs a webhook signed per Standard Webhooks
-  (`webhook-signature: v1,<HMAC-SHA256>`). The client wakes, reads with
-  `listen` (`wait_s: 0`) and replies with `say` (`wait_s: 0`).
+  (`webhook-signature: v1,<HMAC-SHA256>`) carrying the message. The client
+  wakes, reads it from the payload and replies with `say` (`wait_s: 0`).
 
 ```text
 caller (Codex CLI)            Telephone server             implementer (ChatGPT)
@@ -87,17 +87,20 @@ A webhook carries the new message in `data.message`, so the client replies with
 Before the first delivery to a callback URL, the server POSTs a signed
 `{"type": "verification", "challenge": "..."}` and the endpoint must answer 2xx
 with the challenge echoed back as `{"challenge": "..."}`. A callback that fails
-gets JSON-RPC error `-32015` with `data.reason` (`challenge_failed`, `timeout`,
-`connection_failed` or `blocked_address`). A verified callback is trusted for 24
+gets JSON-RPC error `-32015` with `data.reason`: `challenge_failed`, `timeout`,
+`connection_failed`, or `blocked_address` when the host started resolving to a
+private address after the URL was accepted. A URL refused up front (not https,
+or not a public address) is a plain invalid-params error (`-32602`). A verified callback is trusted for 24
 hours per caller, so refreshing a subscription does not challenge it again.
 Unsubscribe by subscription `id`, or by the same `name`, `arguments` and
 `delivery.url` used to subscribe.
 
 <Callout type="warn" title="MCP Events is a draft">
 The events methods follow the draft MCP Events extension (SEP-3415,
-`io.modelcontextprotocol/events`). The server advertises it under
-`capabilities.extensions` and also as `capabilities.events`, the key ChatGPT
-reads, on both protocol revisions. It is covered by tests with a simulated
+`io.modelcontextprotocol/events`). The server advertises
+`capabilities.events`, the key ChatGPT reads, on both protocol revisions, and
+the extension under `capabilities.extensions` on 2026-07-28 (the 2025 revision
+has no `extensions` field). It is covered by tests with a simulated
 subscriber but has not yet been tried against live ChatGPT.
 </Callout>
 

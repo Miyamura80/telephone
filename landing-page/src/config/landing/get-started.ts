@@ -127,7 +127,7 @@ $ tail -n 2 .telephone/transcripts/acme-cli__*.jsonl
         {
           id: "webhook",
           label: "MCP Events",
-          body: "Event-driven clients such as ChatGPT subscribe to line.message and get a signed webhook carrying the message when the peer speaks.",
+          body: "Event-driven clients subscribe to line.message and get a signed webhook carrying the message when the peer speaks. ChatGPT is the intended client; this path has not yet been tried against live ChatGPT.",
           lang: "jsonc",
           code: `// client -> server: subscribe for its seat (draft MCP Events)
 { "method": "events/subscribe",

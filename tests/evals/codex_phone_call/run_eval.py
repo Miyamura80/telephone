@@ -175,6 +175,10 @@ def codex_command(
         "mcp_servers.telephone.tool_timeout_sec=600",
         "-c",
         "mcp_servers.telephone.startup_timeout_sec=30",
+        # Codex asks before calling a non-read-only MCP tool, which an
+        # approval_policy of "never" turns into a hard failure.
+        "-c",
+        'mcp_servers.telephone.default_tools_approval_mode="approve"',
     ]
     if model:
         cmd += ["-m", model]
@@ -217,7 +221,12 @@ def launch_agents(
             (
                 name,
                 subprocess.Popen(
-                    cmd, cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT
+                    cmd,
+                    cwd=cwd,
+                    env=env,
+                    stdin=subprocess.DEVNULL,  # codex exec otherwise waits on stdin
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
                 ),
             )
         )

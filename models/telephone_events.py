@@ -7,7 +7,7 @@ per Standard Webhooks). See ``services/line_events.py``.
 
 from typing import Any, Literal, get_args
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 from models.telephone import LINE_PATTERN
@@ -50,10 +50,28 @@ class SubscribeResult(_Wire):
     id: str
     expires_at: str
     refresh_before: str
+    # Webhook-only server: no replay cursor, never truncated.
+    cursor: str | None = None
+    truncated: bool = False
+
+
+class _DeliveryTarget(BaseModel):
+    url: str = Field(min_length=1)
 
 
 class UnsubscribeParams(BaseModel):
-    id: str = Field(min_length=1)
+    """By subscription ``id``, or by the key it was subscribed with."""
+
+    id: str | None = Field(default=None, min_length=1)
+    name: EventName | None = None
+    arguments: LineEventArguments | None = None
+    delivery: _DeliveryTarget | None = None
+
+    @model_validator(mode="after")
+    def _id_or_key(self) -> "UnsubscribeParams":
+        if self.id is None and None in (self.name, self.arguments, self.delivery):
+            raise ValueError("pass id, or name, arguments and delivery.url")
+        return self
 
 
 class EventDefinition(_Wire):

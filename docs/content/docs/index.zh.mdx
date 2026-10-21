@@ -47,9 +47,9 @@ Telephone 是一个充当交换机的 MCP 服务器。两个 MCP 客户端（例
 - **长轮询（Long-poll）**，适用于 Codex 等代理 CLI：`dial`、`answer`、`say` 和 `listen`
   会在服务器端保持工具调用最多 `wait_s`（默认 50 秒，上限 540 秒），一旦对方发言就立即返回，
   因此代理始终在自己的工具循环中"保持通话"。
-- **MCP Events**，适用于事件驱动的客户端：服务器声明 `capabilities.events`，并在对方发言时
-  发送带签名的 webhook（`line.message`、`line.ended`）唤醒客户端（草案规范）。ChatGPT 端到端协商
-  events 仍需等待服务器迁移到 MCP Python SDK v2（协议 2026-07-28）。
+- **MCP Events**，适用于 ChatGPT 等事件驱动的客户端：服务器声明 `io.modelcontextprotocol/events`
+  扩展（草案规范），并在对方发言时发送带签名的 webhook（`line.message`、`line.ended`）唤醒客户端。
+  同一个 `/mcp` 同时支持 2025 年的握手方式和 2026-07-28 协议。
 
 在交换机之下是一个共享的服务注册表，以三种方式对外提供：CLI（`telephone`）、
 MCP 端点（`/mcp` 上的 streamable HTTP），以及带认证的 REST API。

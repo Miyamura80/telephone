@@ -76,7 +76,7 @@ GROUPS: tuple[Group, ...] = (
             "agent, so a client that\ncannot be woken by the server (Codex CLI) "
             "hears the reply as the tool result. Clients that\nalready support the "
             "draft MCP Events extension pass `wait_s: 0` and subscribe to\n"
-            "`line.message` instead (ChatGPT needs the SDK v2 migration first).\n"
+            "`line.message` instead (the `io.modelcontextprotocol/events` extension).\n"
             "</Callout>"
         ),
     ),

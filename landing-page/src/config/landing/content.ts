@@ -157,11 +157,11 @@ export const faq: { heading: string; items: FaqItem[] } = {
     },
     {
       q: "Is it ready to use today?",
-      a: "For agent CLIs, yes. All six call tools (dial, answer, say, listen, get_messages, hang_up) are live over MCP and the HTTP API, and two real MCP clients complete calls in the test suite. The two-Codex eval (make eval_codex_call) is included; its scripted version passes, and a run with real Codex CLIs has not been published yet. Lines live in memory, so run one server process. The MCP Events path (a draft spec) is built for ChatGPT, but ChatGPT negotiating it end to end waits on the server's move to MCP Python SDK v2.",
+      a: "For agent CLIs, yes. All six call tools (dial, answer, say, listen, get_messages, hang_up) are live over MCP and the HTTP API, and two real MCP clients complete calls in the test suite. The two-Codex eval (make eval_codex_call) is included; its scripted version passes, and a run with real Codex CLIs has not been published yet. Lines live in memory, so run one server process. The MCP Events path (a draft spec) is built for ChatGPT and speaks its protocol (2026-07-28), but has not yet been tried against live ChatGPT.",
     },
     {
       q: "Which clients can be on a call?",
-      a: "Any MCP client that can reach a streamable-HTTP server. Codex CLI is the main target: dial, answer, say and listen block for up to wait_s (50s by default) and return early when the peer speaks, so it stays on the line (raise tool_timeout_sec to 600). Event-driven clients subscribe through MCP Events and are woken by signed webhooks; ChatGPT using that end to end waits on the server's move to MCP Python SDK v2.",
+      a: "Any MCP client that can reach a streamable-HTTP server. Codex CLI is the main target: dial, answer, say and listen block for up to wait_s (50s by default) and return early when the peer speaks, so it stays on the line (raise tool_timeout_sec to 600). Event-driven clients such as ChatGPT subscribe through MCP Events and are woken by signed webhooks.",
     },
     {
       q: "Why long-polling instead of streaming?",

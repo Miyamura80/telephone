@@ -16,8 +16,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+import httpx2
+from mcp import Client
+from mcp.client.streamable_http import streamable_http_client
 
 FIX_OLD = 'os.environ.get("ACME_REGION") or profile["region"]'
 FIX_NEW = 'os.environ.get("ACME_REGION") or profile.get("region", DEFAULT_REGION)'
@@ -32,17 +33,15 @@ def test_region_defaults_when_missing(tmp_path, monkeypatch):
 """
 
 
-async def call(session: ClientSession, tool: str, **args) -> dict:
+async def call(session: Client, tool: str, **args) -> dict:
     result = await session.call_tool(tool, args)
-    if result.isError or result.structuredContent is None:
+    if result.is_error or result.structured_content is None:
         raise RuntimeError(f"{tool} failed: {result.content}")
-    print(f"{tool} -> {result.structuredContent['outcome']}", flush=True)
-    return result.structuredContent
+    print(f"{tool} -> {result.structured_content['outcome']}", flush=True)
+    return result.structured_content
 
 
-async def until_message(
-    session: ClientSession, view: dict, line: str, seat: str
-) -> dict:
+async def until_message(session: Client, view: dict, line: str, seat: str) -> dict:
     while view["outcome"] == "waiting":
         view = await call(session, "listen", line=line, seat=seat, wait_s=30)
     return view
@@ -53,7 +52,7 @@ def sh(*cmd: str, cwd: Path) -> str:
     return (run.stdout + run.stderr).strip()
 
 
-async def caller(session: ClientSession, line: str, workdir: Path) -> None:
+async def caller(session: Client, line: str, workdir: Path) -> None:
     first = sh("./bin/acme-cli", "sync", cwd=workdir)
     view = await call(
         session,
@@ -90,7 +89,7 @@ async def caller(session: ClientSession, line: str, workdir: Path) -> None:
     await call(session, "hang_up", line=line, seat=seat, reason="verified", resolved=ok)
 
 
-async def implementer(session: ClientSession, line: str, workdir: Path) -> None:
+async def implementer(session: Client, line: str, workdir: Path) -> None:
     view = await call(session, "answer", line=line, wait_s=30)
     while view["outcome"] == "no_call":
         view = await call(session, "answer", line=line, wait_s=30)
@@ -122,11 +121,14 @@ async def implementer(session: ClientSession, line: str, workdir: Path) -> None:
 
 async def main(role: str, url: str, line: str, workdir: Path) -> None:
     headers = {"X-API-KEY": os.environ["TELEPHONE_API_KEY"]}
-    async with (
-        streamablehttp_client(url, headers=headers) as (read, write, _),
-        ClientSession(read, write) as session,
-    ):
-        await session.initialize()
+    http = httpx2.AsyncClient(headers=headers, timeout=120)
+    # One agent speaks the 2025 handshake (what Codex CLI uses today), the
+    # other 2026-07-28, so a call across both eras is exercised end to end.
+    mode = "legacy" if role == "caller" else "auto"
+    async with Client(
+        streamable_http_client(url, http_client=http),
+        mode=mode,
+    ) as session:
         await (caller if role == "caller" else implementer)(session, line, workdir)
 
 

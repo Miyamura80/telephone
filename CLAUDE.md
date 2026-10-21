@@ -52,7 +52,7 @@ uv run pytest path/to/test.py  # Run specific test
 
 Layering (top calls down, never the reverse):
 
-- **Transports:** `src/cli/app.py` (Typer) · `mcp_server/` (FastMCP) · `api_server/` (FastAPI)
+- **Transports:** `src/cli/app.py` (Typer) · `mcp_server/` (MCP Python SDK v2 `MCPServer`) · `api_server/` (FastAPI)
 - **Services:** `services/` - pure `@service`-decorated functions, transport-agnostic
 - **Contracts:** `models/` - Pydantic input/output schemas shared by all transports
 - **Infra:** `common/` (config) · `db/` (SQLAlchemy + Alembic) · `utils/llm/` (DSPY) · `src/utils/` (logging, theme, errors)
@@ -60,7 +60,7 @@ Layering (top calls down, never the reverse):
 ### Top-level layout
 
 - **`src/cli/app.py`** + **`src/cli/commands/`** - Typer CLI (`telephone`); `src/cli/commands/__init__.py` auto-discovers `src/cli/commands/*.py` and registers them.
-- **`mcp_server/`** - FastMCP server. Primary transport is **streamable HTTP**, mounted on the FastAPI app at `/mcp` from `api_server/server.py` (one process, one port, shared auth/CORS). Stdio is legacy/dev-only via `telephone-mcp`. `mcp_server/server.py:build_mcp_server` populates a single FastMCP singleton from the service registry; `mount_on` + `lifespan` handle the streamable-HTTP wiring. See [`mcp_server/COMMON_TERMS.md`](./mcp_server/COMMON_TERMS.md).
+- **`mcp_server/`** - MCP server on the Python SDK v2 (`MCPServer`); serves 2025-era clients and 2026-07-28 clients on the same endpoint. Primary transport is **streamable HTTP**, mounted on the FastAPI app at `/mcp` from `api_server/server.py` (one process, one port, shared auth/CORS). Stdio is legacy/dev-only via `telephone-mcp`. `mcp_server/server.py:build_mcp_server` populates a single `MCPServer` singleton from the service registry; `mount_on` + `lifespan` handle the streamable-HTTP wiring. See [`mcp_server/COMMON_TERMS.md`](./mcp_server/COMMON_TERMS.md).
 - **`api_server/`** - FastAPI HTTP server (`auth/`, `billing/`, `middleware/`, `routes/`). Hosts the `/mcp` mount; the primary entrypoint is `telephone-serve`.
 - **`services/`** - `@service(name=, description=, input_model=, output_model=)`-decorated pure functions (`services/__init__.py:20`).
 - **`common/`** - pydantic-settings config.
@@ -95,8 +95,9 @@ Layering (top calls down, never the reverse):
 
 - `services/switchboard.py` - in-memory, thread-safe broker: lines, calls, seats, blocking waits (`threading.Condition`), turn cap, idle expiry, JSONL transcripts, listener hooks. Single process only.
 - `services/telephone_svc.py` - the six `@service` tools (`dial`, `answer`, `say`, `listen`, `get_messages`, `hang_up`); `models/telephone.py` holds their contracts. Field descriptions and `next_step` hints are what the agents read - keep them precise.
-- `mcp_server/enhancers/telephone.py` - runs the blocking tools in a worker pool with progress heartbeats (FastMCP v1 would otherwise run a sync tool on the event loop and stall every request).
-- `services/line_events.py` + `mcp_server/events.py` - MCP Events (draft): `events/*` served by an ASGI adapter in front of FastMCP (SDK v1 cannot route custom methods), Standard Webhooks signing, SSRF-guarded callbacks. Replace the adapter with SDK v2 `MethodBinding` when migrating.
+- `mcp_server/enhancers/telephone.py` - runs the four blocking tools on a dedicated pool with progress heartbeats (the SDK runs sync tools on anyio's shared, capped worker threads, which a minutes-long `listen` would hog).
+- `services/line_events.py` + `mcp_server/events.py` - MCP Events (SEP-3415 draft) as the SDK extension `io.modelcontextprotocol/events` (`MethodBinding`s for `events/*`; a middleware also stamps the `capabilities.events` key ChatGPT reads). Callback verification challenge before first delivery (`-32015` + `data.reason` on failure), Standard Webhooks signing, SSRF-guarded callbacks.
+- Errors: the SDK hides any tool exception's text unless it is a `ToolError`; `_tool_factory.py` re-raises `ValueError`/`PermissionError`/`HTTPException` as `ToolError` so agents read "line busy", "bad seat", quota messages.
 - Config: `common/telephone.yaml`. Eval: `tests/evals/codex_phone_call/` (`make eval_codex_call`, `make eval_codex_call_fake`); `tests/evals` is excluded from pytest collection.
 
 **Don't add new files at the repo root** unless tooling requires it. Nest under an existing folder.
@@ -197,8 +198,8 @@ Structure as: `init()` → `continue(id)` → `cleanup(id)`
 
 This template supports two MCP tool styles:
 
-- **Headless tools** (default) - sync wrapper, no `Context`, returns the
-  Pydantic output model so FastMCP derives `outputSchema`. The CLI/API/MCP
+- **Headless tools** (default) - sync wrapper (run on a worker thread by the
+  SDK), returns the Pydantic output model so the SDK derives `outputSchema`. The CLI/API/MCP
   transports share identical behavior. Use this for any tool the LLM should
   call autonomously without UI affordances.
 - **Enhanced tools** (opt-in via `@enhance` in `mcp_server/enhancers/`) - async

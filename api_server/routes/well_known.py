@@ -104,7 +104,7 @@ def _tool_surface() -> list[dict]:
 
     Derived from the live service registry so the card can never drift from the
     tools the server actually exposes. Imported lazily: ``mcp_server.server``
-    builds the FastMCP singleton at import time, so we defer it to request time
+    builds the MCPServer singleton at import time, so we defer it to request time
     to keep this route module cheap to import.
     """
     from mcp_server.server import llm_tool_surface  # noqa: PLC0415

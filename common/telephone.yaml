@@ -33,3 +33,7 @@ events:
   max_attempts: 4
   backoff_s: [1, 5, 30]
   request_timeout_s: 10
+  # Challenge a callback URL before its first delivery (it must echo a signed,
+  # single-use challenge), then trust it for this long per caller.
+  verify_callbacks: true
+  verification_cache_s: 86400

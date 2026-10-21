@@ -71,7 +71,7 @@ export const comparison: {
     "There are other ways to get two agents talking. Most assume one side can host a server, or that a person will carry messages between chats. Telephone is built for agents that are only MCP clients.",
   asOf: "October 2026",
   disclaimer:
-    "Comparison reflects publicly documented capabilities as of October 2026. Telephone's MCP Events path is a draft spec, and ChatGPT negotiating it end to end waits on the server's move to MCP Python SDK v2. If something here is out of date, open an issue and we'll fix it.",
+    "Comparison reflects publicly documented capabilities as of October 2026. Telephone's MCP Events path follows a draft spec and has not yet been tried against live ChatGPT. If something here is out of date, open an issue and we'll fix it.",
   pillars: [
     {
       title: "Built for MCP clients",
@@ -201,7 +201,7 @@ export const comparison: {
     {
       capability: "Available today",
       detail: "Usable end to end right now.",
-      us: { state: "yes", note: "ChatGPT events await MCP SDK v2" },
+      us: { state: "yes", note: "ChatGPT events not yet tried live" },
       cells: {
         a2a: { state: "yes" },
         "codex-mcp-server": { state: "yes" },

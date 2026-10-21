@@ -7,22 +7,31 @@ import time
 from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from unittest.mock import patch
 
+import httpx
 import pytest
 
 from common import global_config
 from models.telephone_events import SubscribeParams
 from services.line_events import (
+    CallbackError,
     EventsError,
     LineEvents,
     _check_callback_url,
     _http_send,
     decode_secret,
     sign,
+    subscription_id,
 )
 from services.switchboard import Switchboard
 from tests.test_template import TestTemplate
 
 SECRET = "whsec_" + base64.b64encode(b"k" * 32).decode()
+
+
+def _echo(url, body, headers):
+    """A callback that passes verification: echo the challenge back."""
+    challenge = json.loads(body)["challenge"]
+    return 200, json.dumps({"challenge": challenge}).encode()
 
 
 class InlineExecutor(Executor):
@@ -55,7 +64,11 @@ def _setup(statuses: list[int]):
         fn()
 
     events = LineEvents(
-        board, sender=sender, executor=InlineExecutor(), schedule=schedule
+        board,
+        sender=sender,
+        executor=InlineExecutor(),
+        schedule=schedule,
+        verifier=_echo,
     )
     _, caller = board.dial("ev", "help")
     params = SubscribeParams.model_validate(
@@ -220,7 +233,7 @@ class TestLineEvents(TestTemplate):
             return 200
 
         pool = ThreadPoolExecutor(max_workers=4)
-        events = LineEvents(board, sender=sender, executor=pool)
+        events = LineEvents(board, sender=sender, executor=pool, verifier=_echo)
         _, caller = board.dial("ord", "help")
         for name in ("line.message", "line.ended"):
             events.subscribe(
@@ -268,6 +281,15 @@ class TestLineEvents(TestTemplate):
         with pytest.raises(ValueError):
             SubscribeParams.model_validate({**params, "ttlMs": 10**400})
         assert SECRET not in repr(SubscribeParams.model_validate(params))
+
+    def test_unsubscribe_by_key(self):
+        _, events, sub, _, _, _ = _setup([])
+        seat = events._subs[sub.id].seat
+        events.unsubscribe(
+            subscription_id("u1", "http://localhost/hook", "line.message", "ev", seat),
+            owner="u1",
+        )
+        assert events._subs == {}
 
     def test_unsubscribe_requires_the_owner(self):
         _, events, sub, _, _, _ = _setup([])
@@ -342,3 +364,81 @@ class TestCallbackGuard(TestTemplate):
         assert seen["url"] == "https://93.184.216.34/cb?x=1"
         assert seen["headers"]["host"] == "hooks.example.com"
         assert seen["extensions"] == {"sni_hostname": "hooks.example.com"}
+
+
+def _params(url="http://localhost/cb"):
+    return SubscribeParams.model_validate(
+        {
+            "name": "line.message",
+            "arguments": {"line": "vf", "seat": "PLACEHOLDER"},
+            "delivery": {"url": url, "secret": SECRET},
+        }
+    )
+
+
+class TestCallbackVerification(TestTemplate):
+    def _events(self, verifier):
+        board = Switchboard()
+        _, seat = board.dial("vf", "help")
+        events = LineEvents(
+            board,
+            sender=lambda *a: 200,
+            executor=InlineExecutor(),
+            verifier=verifier,
+        )
+        params = _params()
+        params.arguments.seat = seat
+        return events, params
+
+    def test_challenge_is_signed_and_must_be_echoed(self):
+        seen = []
+
+        def verifier(url, body, headers):
+            seen.append((body, headers))
+            return _echo(url, body, headers)
+
+        events, params = self._events(verifier)
+        events.subscribe(params, owner="u1")
+        body, headers = seen[0]
+        assert json.loads(body)["type"] == "verification"
+        expected = sign(
+            decode_secret(SECRET),
+            headers["webhook-id"],
+            int(headers["webhook-timestamp"]),
+            body,
+        )
+        assert headers["webhook-signature"] == expected
+
+    def test_wrong_echo_fails_with_challenge_failed(self):
+        events, params = self._events(lambda u, b, h: (200, b'{"challenge": "nope"}'))
+        with pytest.raises(CallbackError) as info:
+            events.subscribe(params, owner="u1")
+        assert info.value.reason == "challenge_failed"
+        assert events._subs == {}
+
+    def test_non_2xx_fails_and_timeouts_are_categorized(self):
+        events, params = self._events(lambda u, b, h: (500, b""))
+        with pytest.raises(CallbackError, match="challenge_failed"):
+            events.subscribe(params, owner="u1")
+
+        def slow(url, body, headers):
+            raise httpx.ReadTimeout("slow")
+
+        events, params = self._events(slow)
+        with pytest.raises(CallbackError) as info:
+            events.subscribe(params, owner="u1")
+        assert info.value.reason == "timeout"
+
+    def test_a_verified_callback_is_not_challenged_again(self):
+        calls = []
+
+        def verifier(url, body, headers):
+            calls.append(url)
+            return _echo(url, body, headers)
+
+        events, params = self._events(verifier)
+        events.subscribe(params, owner="u1")
+        events.subscribe(params, owner="u1")  # a refresh
+        assert len(calls) == 1
+        events.subscribe(params, owner="someone-else")  # cached per caller
+        assert len(calls) == 2

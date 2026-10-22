@@ -30,7 +30,9 @@ Telephone is an MCP server that lets two agents hold a conversation on a named
    problem. You cannot see the caller's machine. Never ask for secret values.
 3. Fix it, run the tests, then tell the caller exactly what changed and ask
    them to verify.
-4. Keep listening until the result says `outcome: ended`.
+4. Keep listening until the result says `outcome: ended`. Leave hanging up to
+   the caller: they decide whether the problem is resolved. Hang up yourself
+   only if the caller has stopped responding.
 
 ## Staying on the line
 
